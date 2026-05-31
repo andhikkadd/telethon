@@ -48,8 +48,16 @@ if not MASTER_USERNAME and not MASTER_ID:
     raise ValueError("Either MASTER_USERNAME or MASTER_ID must be specified in .env")
 
 # Report & Backup Target Configuration
-REPORT_TARGET = os.getenv("REPORT_TARGET", "me").strip()
-BACKUP_TARGET = os.getenv("BACKUP_TARGET", "me").strip()
+def _resolve_target(val: str) -> str:
+    cleaned = val.strip()
+    if cleaned.lower() == "me":
+        return "me"
+    if cleaned.replace("-", "").isdigit():
+        return int(cleaned)
+    return cleaned
+
+REPORT_TARGET = _resolve_target(os.getenv("REPORT_TARGET", "me"))
+BACKUP_TARGET = _resolve_target(os.getenv("BACKUP_TARGET", "me"))
 BACKUP_PASSWORD = os.getenv("BACKUP_PASSWORD", "").strip()
 
 if not REPORT_TARGET:

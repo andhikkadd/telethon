@@ -531,6 +531,10 @@ async def post_run_backup(request: Request):
         # Send backup to Telegram
         client = telegram_client.get_client()
         report_target = await settings_svc.get_setting("report_target", config.REPORT_TARGET)
+        if isinstance(report_target, str):
+            cleaned_tgt = report_target.strip()
+            if cleaned_tgt.replace("-", "").isdigit():
+                report_target = int(cleaned_tgt)
         
         caption_msg = f"🔒 **Backup Proyek Terenkripsi GPG**\n• **Dibuat**: `{datetime.now().isoformat()}`\n• **Berkas**: `{backup_path.split(chr(92))[-1]}`"
         await client.send_file(report_target, backup_path, caption=caption_msg)

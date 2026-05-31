@@ -156,6 +156,12 @@ class WaveService:
             if send_report_val == "1":
                 report_target = await settings_svc.get_setting("report_target", config.REPORT_TARGET)
                 if report_target:
+                    # Cast to int if numeric string (e.g. numeric ID)
+                    if isinstance(report_target, str):
+                        cleaned_tgt = report_target.strip()
+                        if cleaned_tgt.replace("-", "").isdigit():
+                            report_target = int(cleaned_tgt)
+                            
                     duration_sec = (datetime.fromisoformat(finished_str) - datetime.fromisoformat(now_str)).total_seconds()
                     report_msg = (
                         f"📊 **Laporan Pengiriman Wave #{wave_log_id}**\n"
