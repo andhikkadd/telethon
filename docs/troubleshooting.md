@@ -1,91 +1,94 @@
-# Panduan Troubleshooting (Pemecahan Masalah)
+# Troubleshooting Guide
 
-Dokumen ini berisi daftar masalah umum yang mungkin Anda temui saat menjalankan Telegram Userbot Promo Framework beserta solusi penyelesaiannya.
+This document lists common issues you might encounter while running the Telegram Userbot Promo Framework along with their solutions.
 
 ---
 
-## 1. Error Lingkungan & Startup
+## 1. Installation & Bootstrapping Failures
 
 ### `ModuleNotFoundError: No module named 'telethon'`
-* **Penyebab**: Dependency python belum terinstall di runtime Anda.
-* **Solusi**:
-  Jalankan perintah berikut di console/terminal Anda:
+* **Cause**: Python dependencies have not been installed in your runtime environment.
+* **Solution**:
+  Run the installation command in your terminal/virtual environment:
   ```bash
-  pip3 install -r requirements.txt
+  pip install -r requirements.txt
   ```
-  Jika menggunakan PM2 di server Anda, pastikan process manager Anda melakukan auto-install atau jalankan command instalasi secara manual melalui terminal.
+  If using PM2 on your server, verify that the active process interpreter points to the correct virtual environment folder containing these dependencies.
 
 ### `ValueError: API_ID is required but missing in .env`
-* **Penyebab**: Konfigurasi file `.env` belum dibuat atau variabel `API_ID` dan `API_HASH` belum diisi.
-* **Solusi**:
-  1. Salin `.env.example` menjadi `.env`:
+* **Cause**: The `.env` configuration file is missing, or the `API_ID` and `API_HASH` fields have not been filled in.
+* **Solution**:
+  1. Copy `.env.example` to `.env`:
      ```bash
      cp .env.example .env
      ```
-  2. Edit file `.env` menggunakan text editor (seperti nano) dan isi dengan kredensial API Telegram Anda yang didapat dari [https://my.telegram.org](https://my.telegram.org).
+  2. Edit `.env` using a terminal text editor (like nano) and insert your Telegram API credentials obtained from [https://my.telegram.org](https://my.telegram.org).
 
 ---
 
-## 2. Masalah Sesi & Login Telegram
+## 2. Authentication & Rate-Limiting Issues
 
-### Akun Ter-logged Out / Sesi Tidak Valid
-* **Penyebab**: Sesi Anda dideotorisasi dari perangkat aktif Telegram, atau file sesi di `sessions/` rusak/terhapus.
-* **Solusi**:
-  1. Hentikan proses bot (`pm2 stop main` atau hentikan via panel).
-  2. Hapus file sesi lama di folder `sessions/`:
+### Account Logged Out / Invalid Session
+* **Cause**: The active MTProto session was terminated from your Telegram devices menu, or the session binary files under `sessions/` were corrupted or deleted.
+* **Solution**:
+  1. Stop the bot daemon process:
+     ```bash
+     pm2 stop promo-userbot
+     ```
+  2. Purge the invalid session files:
      ```bash
      rm sessions/promo_userbot.session*
      ```
-  3. Jalankan bot secara interaktif di terminal agar Anda bisa memasukkan nomor HP dan OTP baru:
+  3. Start the application interactively in your terminal to complete a new OTP authentication:
      ```bash
-     python3 main.py
+     python main.py
      ```
-  4. Setelah sukses login, hentikan bot (`Ctrl+C`) lalu jalankan kembali lewat PM2 / systemd.
+  4. Once logged in, stop the interactive process using `Ctrl + C` and restart the daemon via PM2.
 
-### `FloodWaitError` / Akun Dibatasi Sementara
-* **Penyebab**: Telegram mendeteksi aktivitas pengiriman pesan atau login yang terlalu cepat dari akun Anda (rate limit).
-* **Solusi**:
-  - Jika FloodWait terjadi saat mengirim pesan, bot akan otomatis tidur selama detik yang diminta (jika kurang dari 90 detik) atau melewatkan grup tersebut.
-  - Jika FloodWait terjadi saat login pertama, Anda harus menunggu waktu penangguhan yang ditentukan Telegram (biasanya tertera di log konsol dalam hitungan detik) sebelum mencoba login kembali.
-  - **Pencegahan**: Jangan set `DELAY_BETWEEN_GROUPS_SECONDS` terlalu kecil. Batas aman minimal adalah 15-30 detik.
+### `FloodWaitError` / Temporary Telegram Limitations
+* **Cause**: Telegram rate-limited your account because messages or logins were sent too rapidly.
+* **Solution**:
+  - If the rate limit is hit during wave dispatches, the framework automatically handles the wait dynamically (if the wait time is < 90 seconds) or auto-skips the group to avoid blocks.
+  - If hit during bootstrapping/login, you must wait the exact duration specified in the console logs (in seconds) before trying again.
+  - **Prevention**: Do not set `DELAY_BETWEEN_GROUPS_SECONDS` too low. A safe interval is 15-30 seconds between groups.
 
 ---
 
-## 3. Masalah Database SQLite
+## 3. Database Constraints
 
 ### `sqlite3.OperationalError: database is locked`
-* **Penyebab**: SQLite mengalami kebuntuan (deadlock) karena ada proses lain yang sedang menulis ke database secara bersamaan, atau koneksi sebelumnya tidak ditutup dengan benar saat bot crash.
-* **Solusi**:
-  - Hentikan seluruh instance bot yang berjalan. Pastikan tidak ada double process:
-    ```bash
-    ps aux | grep python3
-    ```
-    Gunakan `kill <PID>` untuk mematikan proses gantung.
-  - Restart bot menggunakan PM2 untuk memastikan hanya ada satu koneksi aktif ke database.
+* **Cause**: The SQLite database engine is locked due to concurrent write processes or a previously unclosed connection from a crash.
+* **Solution**:
+  - Verify that multiple instances of the python script are not running concurrently on the server:
+     ```bash
+     ps aux | grep python
+     ```
+     Terminate any orphaned processes using `kill <PID>`.
+  - Restart the application via PM2. Database connection timeouts are set to 30.0s to mitigate locks.
 
 ---
 
-## 4. Masalah Pengiriman Grup
+## 4. Entity Resolution Failures
 
 ### `ValueError: Could not find the input entity for...`
-* **Penyebab**: Bot tidak dapat menemukan grup target. Ini biasanya terjadi ketika Anda menambahkan grup baru menggunakan username yang salah, grup tersebut privat dan akun Anda belum bergabung, atau akun Anda diblokir dari grup tersebut.
-* **Solusi**:
-  - Coba buka link grup menggunakan aplikasi Telegram biasa pada akun userbot untuk memastikan akun tersebut sudah terdaftar sebagai anggota grup.
-  - Pastikan format username yang dimasukkan benar (contoh: `@nama_grup` atau link lengkap `t.me/nama_grup`).
+* **Cause**: The userbot was unable to locate the target group. This occurs if you supplied an invalid username, if the group is private and the account is not a member, or if the account has been banned from the target.
+* **Solution**:
+  - Check the target group username or link format (e.g., `@group_username` or public links like `t.me/group_username`).
+  - Open the group link in a standard Telegram client using your userbot account to confirm membership status and active write permissions.
 
 ---
 
-## 5. Masalah Backup & Enkripsi
+## 5. Encryption & Backup Failures
 
 ### `RuntimeError: GPG is not available and ALLOW_UNENCRYPTED_BACKUP=false`
-* **Penyebab**: Perintah `!backup` dijalankan, tetapi server/hosting Anda tidak memiliki program `gpg` terinstal di sistemnya, sementara pengaturan keamanan melarang pengiriman zip tanpa sandi.
-* **Solusi**:
-  - **Opsi A (Direkomendasikan)**: Hubungi administrator server Anda atau instal `gnupg` secara manual:
-    ```bash
-    # Debian/Ubuntu
-    sudo apt-get install gnupg
-    ```
-  - **Opsi B**: Jika Anda berada di lingkungan hosting terbatas dan tidak dapat menginstal package sistem, Anda dapat mengizinkan backup ZIP tanpa enkripsi dengan mengubah pengaturan di `.env`:
-    ```env
-    ALLOW_UNENCRYPTED_BACKUP=true
-    ```
+* **Cause**: A backup was requested, but GnuPG (`gpg`) is not installed on the system, and security settings prohibit sending unencrypted archives.
+* **Solution**:
+  - **Option A (Recommended)**: Install GnuPG on your server system:
+     ```bash
+     # Debian/Ubuntu
+     sudo apt-get update && sudo apt-get install -y gnupg
+     ```
+  - **Option B**: If you are in a constrained shared environment where installing packages is not possible, enable unencrypted fallbacks in your `.env`:
+     ```env
+     ALLOW_UNENCRYPTED_BACKUP=true
+     ```

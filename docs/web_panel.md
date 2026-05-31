@@ -1,80 +1,80 @@
 # Web Control Panel Guide
 
-Proyek ini dilengkapi dengan Web Control Panel berbasis **FastAPI** + **Jinja2** yang berjalan dalam satu proses (event loop) yang sama dengan Telegram Userbot. Anda dapat memantau status bot, melihat grafik resource, mengelola grup dan template promo, melihat log, serta melakukan diagnostic dan backup secara visual.
+This project includes a built-in Web Control Panel built on **FastAPI** and **Jinja2** templates. The server runs in the same process event loop as the Telegram Userbot. The panel enables you to monitor the bot's runtime status, view server resource utilization charts, manage targets/templates, inspect logs, run diagnostic cleaning, and trigger encrypted GPG backups visually.
 
 ---
 
-## 1. Konfigurasi Environment (.env)
+## 1. Environment Configurations (.env)
 
-Pastikan variabel-variabel berikut diatur pada berkas `.env` Anda sebelum menjalankan aplikasi:
+Ensure the following variables are configured in your `.env` file before booting the application:
 
 ```env
-# Mengaktifkan/menonaktifkan web panel (true/false)
+# Enable or disable the web control panel (true/false)
 ENABLE_WEB_PANEL=true
 
-# Host binding (default 0.0.0.0 agar dapat diakses dari luar)
+# Host binding (set to 0.0.0.0 to listen on all interfaces)
 WEB_HOST=0.0.0.0
 
-# Port yang digunakan oleh FastAPI
+# Network port for FastAPI / Uvicorn
 WEB_PORT=8000
 
-# Kredensial Administrator Web Panel
+# Administrator Credentials
 WEB_ADMIN_USERNAME=admin
-WEB_ADMIN_PASSWORD=isi_password_admin_yang_sangat_kuat
+WEB_ADMIN_PASSWORD=your_strong_admin_password
 
-# Kunci acak untuk menandatangani session cookies
-WEB_SESSION_SECRET=masukkan_random_string_panjang_di_sini
+# Secret key for cookie session signatures
+WEB_SESSION_SECRET=your_random_32_character_hexadecimal_string
 ```
 
 > [!WARNING]
-> Jangan biarkan `WEB_ADMIN_PASSWORD` kosong jika `ENABLE_WEB_PANEL=true`. Sistem akan mendeteksi password kosong saat startup dan menghentikan proses (crash) demi alasan keamanan. Gunakan password yang panjang dan unik untuk melindungi sesi MTProto akun Telegram Anda.
+> Never leave `WEB_ADMIN_PASSWORD` or `WEB_SESSION_SECRET` empty when `ENABLE_WEB_PANEL=true`. The system will validate credentials on startup and fail immediately if default or insecure configurations are detected.
 
 ---
 
-## 2. Pengaturan Port & Akses Firewall
+## 2. Network Ports & Firewall Settings
 
-Untuk dapat mengakses Web Panel secara langsung melalui alamat IP publik server Anda:
+To access the Web Panel directly using your server's public IP address:
 
-1. Pastikan port yang Anda tetapkan pada `WEB_PORT` (default `8000`) telah dibuka di firewall sistem operasi server Anda (misalnya **UFW** pada Ubuntu/Debian):
+1. Confirm that the network port configured in `WEB_PORT` (default `8000`) is allowed through your server's firewall (e.g. **UFW** on Ubuntu/Debian):
    ```bash
    sudo ufw allow 8000/tcp
    ```
-2. Jika Anda menggunakan layanan cloud (seperti AWS EC2, Google Cloud, DigitalOcean), pastikan Anda telah mengonfigurasi aturan keamanan jaringan (**Security Group** / **Firewall Rules**) untuk mengizinkan trafik masuk (Inbound Traffic) pada port tersebut.
-3. Akses panel melalui peramban: `http://<IP_SERVER_ANDA>:8000`.
+2. If utilizing cloud hosting instances (such as AWS EC2, Google Cloud Platform, or DigitalOcean Droplets), update your network security rules (**Security Groups / Inbound Rules**) to allow TCP traffic on port `8000` from your IP.
+3. Access the dashboard in your web browser: `http://<YOUR_SERVER_IP>:8000`.
 
 ---
 
-## 3. Deployment Menggunakan Cloudflare Tunnel (Alternatif NAT / Port Terblokir)
+## 3. Secure Deployment via Cloudflare Tunnel (Recommended)
 
-Jika server Anda berada di balik jaringan NAT, tidak memiliki IP publik statis, atau firewall memblokir semua port masuk, gunakan **Cloudflare Tunnel** (gratis) untuk mengekspos Web Panel ke internet secara aman tanpa port-forwarding:
+If your server operates behind a NAT network, does not have a static public IP, or firewall policies prevent exposing ports, you can deploy a secure **Cloudflare Tunnel** (free of charge) to expose the panel without open ports:
 
-### Langkah A: Buat Tunnel melalui Cloudflare Dashboard
-1. Buka dashboard Cloudflare Anda dan masuk ke menu **Zero Trust** > **Networks** > **Tunnels**.
-2. Klik **Create a Tunnel**, beri nama (misalnya `telegram-userbot`), lalu klik **Save**.
-3. Cloudflare akan menyediakan perintah instalasi beserta **Token Tunnel** (string acak yang panjang).
+### Step A: Initialize the Tunnel in Cloudflare Dashboard
+1. Log in to your Cloudflare Dashboard and navigate to **Zero Trust** > **Networks** > **Tunnels**.
+2. Click **Create a Tunnel**, choose a name (e.g. `telegram-userbot`), and click **Save**.
+3. Cloudflare will display installation scripts and provide a unique **Tunnel Token** (a long alphanumeric string).
 
-### Langkah B: Jalankan Cloudflared di Server
-1. Unduh dan pasang binary `cloudflared` pada server:
+### Step B: Install and Run Cloudflared on your VPS
+1. Download and install the `cloudflared` binary on your server:
    ```bash
    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
    sudo dpkg -i cloudflared.deb
    ```
-2. Jalankan tunnel sebagai proses latar belakang PM2:
+2. Run the tunnel service in the background using PM2:
    ```bash
-   pm2 start cloudflared --name "cf-tunnel" -- tunnel run --token <MASUKKAN_TOKEN_CLOUDFLARE_DI_SINI>
+   pm2 start cloudflared --name "cf-tunnel" -- tunnel run --token <YOUR_CLOUDFLARE_TUNNEL_TOKEN>
    ```
-3. Di Dashboard Cloudflare (menu **Public Hostname**), tambahkan entri:
-   - **Subdomain/Domain**: `userbot.domainanda.com`
+3. In the Cloudflare Zero Trust Dashboard, under the **Public Hostname** tab for your tunnel, add an entry:
+   - **Subdomain/Domain**: `userbot.yourdomain.com`
    - **Service Type**: `HTTP`
-   - **URL**: `localhost:8000` (atau sesuaikan dengan port `WEB_PORT` Anda).
-4. Klik **Save Hostname**. Selesai! Web panel kini aman diakses lewat `https://userbot.domainanda.com` dengan SSL otomatis.
+   - **URL**: `localhost:8000` (adjust port to match your `WEB_PORT`).
+4. Click **Save Hostname**. The web panel is now securely accessible via `https://userbot.yourdomain.com` with automated SSL certificate provisioning.
 
 ---
 
-## 4. Emergency Telegram Control
+## 4. Emergency Telegram Chat Controls
 
-Meskipun Web Panel mempermudah manajemen visual sehari-hari, **Telegram Admin Commands** tetap aktif 24/7 dan berjalan secara paralel sebagai kontrol darurat (emergency control).
+While the Web Panel offers a visual interface for daily management, the **Telegram Admin Chat Commands** run in parallel as an emergency control mechanism.
 
-Jika Web Panel tidak dapat diakses akibat gangguan jaringan, kegagalan web server, atau saat proses bootstrapping OTP pertama kali:
-- Kirim command chat biasa seperti `!status`, `!pause`, `!resume`, `!health`, atau `!backup` langsung dari akun Master Anda di aplikasi Telegram.
-- Perubahan status dari Telegram (misalnya jeda scheduler dengan `!pause`) akan langsung ter-sinkronisasi dan terlihat pada halaman Dashboard Web Panel secara real-time.
+If the Web Panel is inaccessible due to firewall blocks, proxy updates, or during the initial OTP authentication phase:
+- Dispatch administrative commands like `!status`, `!pause`, `!resume`, `!health`, or `!backup` directly from your authorized Master account in the Telegram application.
+- State changes made via Telegram commands (such as suspending the scheduler with `!pause`) will synchronize instantly and update the Web Control Panel dashboard in real-time.

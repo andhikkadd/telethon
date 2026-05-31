@@ -1,92 +1,92 @@
-# Alur Kerja Git & GitHub (Git Workflow)
+# Git & GitHub Workflow
 
-Dokumen ini menjelaskan alur kerja pengembangan (development workflow) dari lokal komputer Anda ke repositori GitHub hingga penyebaran (deploy) kode terbaru ke server produksi.
+This document explains the development workflow for pushing code changes from your local development machine to GitHub, and subsequently pulling updates onto your production server.
 
 ---
 
-## Alur Pengembangan & Deploy
+## Development & Deployment Flow
 
 ```mermaid
 sequenceDiagram
-    participant Dev as Lokal (Developer)
+    participant Dev as Local Machine (Developer)
     participant Git as GitHub (Private Repo)
-    participant Server as Server Produksi (PM2 / systemd)
+    participant Server as Production Server (PM2 / systemd)
     
-    Dev->>Dev: Ubah kode / Tambah fitur
-    Dev->>Dev: Uji coba lokal (jika memungkinkan)
+    Dev->>Dev: Modify code / Add features
+    Dev->>Dev: Test changes locally
     Dev->>Git: git push origin main
-    Server->>Server: Hentikan Bot (pm2 stop telegram-userbot)
+    Server->>Server: Stop Userbot (pm2 stop promo-userbot)
     Server->>Git: git pull origin main
-    Server->>Server: pip3 install -r requirements.txt (jika ada dependency baru)
-    Server->>Server: Jalankan Bot (pm2 restart telegram-userbot)
+    Server->>Server: pip install -r requirements.txt (if new dependencies exist)
+    Server->>Server: Start Userbot (pm2 restart promo-userbot)
 ```
 
 ---
 
-## Panduan Langkah-demi-Langkah
+## Step-by-Step Guide
 
-### Langkah 1: Inisialisasi Repositori Git (Pertama Kali)
+### Step 1: Initialize Git Repository (One-Time Setup)
 
-Buka terminal di direktori proyek lokal Anda dan jalankan perintah berikut:
+Open a terminal in your local project folder and execute the following commands to link it to your remote repository:
 ```bash
-# Masuk ke direktori proyek
+# Navigate to the project root
 cd telethon/
 
-# Inisialisasi git
+# Initialize Git tracking
 git init
 
-# Tambahkan berkas
+# Add all files to stage
 git add .
 
-# Buat commit pertama
+# Create the initial commit
 git commit -m "Initial commit: Userbot Promo Framework"
 
-# Hubungkan ke repositori GitHub Private Anda
-git remote add origin https://github.com/username/nama-repo-anda.git
+# Link to your remote GitHub repository
+git remote add origin https://github.com/username/your-repository-name.git
 
-# Push ke GitHub
+# Push to the main branch
 git push -u origin main
 ```
 
 > [!WARNING]
-> Sebelum melakukan `git add .`, pastikan file `.gitignore` sudah ada di direktori tersebut. Jangan pernah mem-push file `.env` atau folder `sessions/` ke repositori Anda.
+> Ensure that your `.gitignore` file is fully configured before running `git add .`. Never push `.env` files or the `sessions/` directory containing sensitive Telegram credentials to public or untracked remote locations.
 
 ---
 
-### Langkah 2: Melakukan Pembaruan Kode Lokal
+### Step 2: Developing and Pushing Code Updates
 
-Saat Anda ingin memperbaiki bug atau menambahkan fitur baru:
-1. Lakukan perubahan pada kode di komputer lokal Anda.
-2. Commit perubahan Anda:
+When fixing a bug or introducing new features:
+1. Implement your code changes locally.
+2. Commit your modifications:
    ```bash
    git add .
-   git commit -m "Deskripsi perubahan: misalnya menambahkan web panel"
+   git commit -m "feat: implement web control panel layout adjustments"
    ```
-3. Kirim perubahan ke GitHub:
+3. Push changes to GitHub:
    ```bash
    git push origin main
    ```
 
 ---
 
-### Langkah 3: Menarik Kode Terbaru di Server Produksi
+### Step 3: Fetching and Deploying Updates on the Production Server
 
-Untuk memperbarui bot yang sedang berjalan di server:
-1. Masuk ke terminal/SSH server produksi Anda.
-2. Matikan bot terlebih dahulu:
+To update the running userbot on your VPS:
+1. Log in to your production server via SSH.
+2. Stop the running userbot process:
    ```bash
-   pm2 stop telegram-userbot
+   pm2 stop promo-userbot
    ```
-3. Jalankan git pull untuk menarik kode terbaru dari GitHub:
+3. Pull the latest commits from GitHub:
    ```bash
    git pull origin main
    ```
-4. Jika ada library baru yang ditambahkan ke `requirements.txt`, instal kembali dependensinya:
+4. If new dependencies were added to `requirements.txt`, install them in your virtual environment:
    ```bash
-   pip3 install -r requirements.txt
+   pip install -r requirements.txt
    ```
-5. Jalankan kembali bot:
+5. Restart the daemon process:
    ```bash
-   pm2 start telegram-userbot
+   pm2 start promo-userbot
    ```
-6. Selesai! Bot Anda kini berjalan menggunakan kode terbaru tanpa kehilangan file sesi atau database SQLite Anda.
+6. The userbot will resume execution using the updated codebase without disrupting your active SQLite databases or Telegram session binaries.

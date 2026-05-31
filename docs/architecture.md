@@ -1,14 +1,14 @@
-# Dokumentasi Arsitektur Sistem
+# System Architecture Documentation
 
-Dokumen ini menjelaskan struktur arsitektur, interaksi modul, desain database, dan manajemen state yang diimplementasikan pada Python Telegram Userbot Promo Framework.
+This document explains the system architecture, module interactions, database design, and runtime state management implemented in the Python Telegram Userbot Promo Framework.
 
 ---
 
-## 1. Ikhtisar Arsitektur
+## 1. Architectural Overview
 
-Project ini menggunakan arsitektur modular yang didorong oleh event (event-driven) berbasis pemrograman asinkron (`asyncio`). Ini memastikan bot dapat memantau pesan Telegram secara real-time sekaligus menjalankan penjadwal (scheduler) background tanpa saling memblokir satu sama lain.
+The project uses a modular, event-driven architecture built on asynchronous programming (`asyncio`). This design ensures that the bot can monitor Telegram messages and respond to commands in real-time while simultaneously executing background scheduler cycles without blocking the main event thread.
 
-### Hubungan Antar Komponen
+### Module Interactions
 
 ```mermaid
 graph TD
@@ -16,9 +16,9 @@ graph TD
     Entry --> Client[telegram_client.py Telethon]
     Entry --> Sch[scheduler.py Loop]
     Client --> Cmd[commands.py Command Router]
-    Sch --> Sender[wave_sender.py Wave Dispatcher]
+    Sch --> Sender[services/wave_service.py Wave Dispatcher]
     Cmd --> Sender
-    Cmd --> Backup[backup.py GPG Backup]
+    Cmd --> Backup[services/backup_service.py GPG Backup]
     Cmd --> Server[server_status.py Health Monitor]
     Sender --> DB
     Cmd --> DB
@@ -26,40 +26,40 @@ graph TD
 
 ---
 
-## 2. Rincian Modul
+## 2. Module Specifications
 
-### A. Core & Entrypoint (`main.py`)
-Bertanggung jawab atas bootstrapping aplikasi:
-1. Inisialisasi koneksi database SQLite dan migrasi tabel.
-2. Memuat pengaturan dinamis dari database (`paused`, `min_delay`, `max_delay`) ke dalam *Global State* di memori.
-3. Mengaktifkan koneksi MTProto Telethon ke Telegram.
-4. Mendaftarkan command handler ke client Telegram.
-5. Menjalankan task asinkron scheduler di latar belakang.
-6. Menangani sinyal terminasi sistem (`SIGINT`, `SIGTERM`) secara anggun (graceful shutdown).
+### A. Core Entrypoint (`main.py`)
+Responsible for bootstrapping the application:
+1. Initializes the SQLite database schema and executes required migrations.
+2. Loads persisted settings (`paused`, `min_delay`, `max_delay`) from SQLite into the in-memory global state.
+3. Establishes the MTProto Telethon connection with Telegram.
+4. Registers command event listeners on the Telegram client.
+5. Spawns the asynchronous background scheduler loop.
+6. Attaches termination signal listeners (`SIGINT`, `SIGTERM` on supported platforms) to run a graceful shutdown sequence (closing database files, stopping Uvicorn, disconnecting clients).
 
-### B. Konfigurasi (`config.py`)
-Membaca environment variables dari file `.env`, melakukan konversi tipe data (misal: casting delay string ke integer, parsing boolean), memberikan default fallback yang aman, dan memvalidasi kredensial wajib (seperti `API_ID` & `API_HASH`).
+### B. Configuration System (`config.py`)
+Loads environment variables from `.env`, casts data types (such as parsing delays to integers and options to booleans), sets secure fallback defaults, and validates mandatory fields like `API_ID` & `API_HASH` before startup.
 
 ### C. Database Wrapper (`database.py`)
-Menyediakan layer abstraksi untuk database SQLite. Karena module `sqlite3` Python bersifat sinkron (blocking), semua operasi query dibungkus dengan `asyncio.to_thread` agar berjalan di thread terpisah. Hal ini menjaga agar loop utama `asyncio` tetap responsif saat bot membaca/menulis data.
+Implements an asynchronous interface for the SQLite database. Since the default Python `sqlite3` module is synchronous and blocking, all queries are wrapped in `asyncio.to_thread` to run in worker threads. This prevents blocking the main `asyncio` event loop.
 
-### D. Penjadwal Background (`scheduler.py`)
-Task background mandiri yang menghitung delay acak dalam menit antara batas minimum dan maksimum. Scheduler mengimplementasikan tidur asinkron responsif (responsive sleep) dalam interval 5 detik. Hal ini memungkinkan bot langsung merespons ketika admin mengubah status bot dari *Running* ke *Paused* atau sebaliknya, tanpa harus menunggu tidur panjang selesai.
+### D. Background Scheduler (`scheduler.py`)
+A continuous task loop that computes randomized intervals (in minutes) between the minimum and maximum boundaries. The scheduler uses a responsive sleeping interval (checks every 5 seconds) so that pause or resume commands take effect immediately without waiting for a long sleep cycle to end.
 
-### E. Pengirim Wave (`wave_sender.py`)
-Berisi logika utama pengiriman pesan promosi secara berurutan. Dilengkapi dengan:
-- **Anti Double-Wave Lock**: Memastikan tidak ada dua wave (otomatis vs manual) yang berjalan bersamaan dengan memeriksa `state.active_wave_task`.
-- **Delay Antar Grup**: Mencegah akun terdeteksi sebagai spammer dengan memberikan delay jeda aman.
-- **Penanganan FloodWait**: Jika mendeteksi rate limit dari Telegram, bot akan tidur sementara (jika durasi < 90 detik) lalu mencoba mengirim ulang, atau melewatkan grup tersebut jika durasi terlalu lama.
+### E. Promotional Wave Service (`services/wave_service.py`)
+Coordinates sending promotional messages sequentially across active targets:
+- **Anti Double-Wave Lock**: Uses `state.active_wave_task` as a global runtime lock to prevent manual and automatic waves from running at the same time.
+- **Inter-Group Delay**: Pauses between message dispatches to prevent rate-limiting or anti-spam triggers.
+- **FloodWait Handler**: Captures Telegram rate-limit exceptions and automatically pauses sending if the cooldown duration is manageable, or skips the group if it requires a long wait.
 
-### F. Backup Engine (`backup.py`)
-Mengemas file penting, basis data, dan berkas sesi ke dalam format `.zip`. Jika perintah `gpg` tersedia di server, berkas zip dienkripsi menggunakan metode enkripsi simetris **AES256** menggunakan password rahasia, lalu menghapus zip mentah dari server.
+### F. GPG Backup Service (`services/backup_service.py`)
+Bundles source code files, database instances, and active session keys into a ZIP package. If `gpg` is available on the system, the archive is encrypted using AES-256 symmetric encryption before transmitting it to the Telegram target and deleting temporary files from the disk.
 
 ---
 
-## 3. Desain Database (SQLite)
+## 3. SQLite Database Schema
 
-Tabel dirancang secara sederhana namun lengkap untuk melacak status operasional bot:
+The database tracks configurations, target group directories, and execution histories:
 
 ```
 +--------------------------------------------------------+
@@ -67,7 +67,10 @@ Tabel dirancang secara sederhana namun lengkap untuk melacak status operasional 
 +--------------------------------------------------------+
 |  1. settings: key (PK), value, updated_at              |
 |  2. groups: id (PK), username, title, raw_input,       |
-|            is_skipped, created_at, updated_at          |
+|            is_skipped, status, last_send_status,       |
+|            last_error, last_checked_at, last_success_at|
+|            fail_streak, auto_skip_reason,              |
+|            cooldown_until, created_at, updated_at      |
 |  3. templates: id (PK), text, is_active,               |
 |               created_at, updated_at                   |
 |  4. wave_logs: id (PK), started_at, finished_at,        |
@@ -82,11 +85,11 @@ Tabel dirancang secara sederhana namun lengkap untuk melacak status operasional 
 
 ---
 
-## 4. Manajemen State
+## 4. Runtime State Management
 
-Aplikasi mempertahankan satu objek singleton `state` (di dalam `utils.py`) untuk mempermudah berbagi data runtime antar modul:
-- `is_paused`: Menentukan apakah scheduler aktif.
-- `active_wave_task`: Referensi ke `asyncio.Task` wave yang sedang berjalan.
-- `next_run_time`: Tanggal & waktu wave berikutnya dijadwalkan.
-- `last_run_time`: Tanggal & waktu wave terakhir selesai dijalankan.
-- `min_delay` / `max_delay`: Rentang batas waktu acak yang aktif.
+The application maintains a singleton `state` object (`utils.py`) to share operational variables across different asynchronous tasks:
+- `is_paused`: Pauses or resumes background scheduler loops.
+- `active_wave_task`: Holds a reference to the active `asyncio.Task` wave.
+- `next_run_time`: The timestamp for the next scheduled automated wave.
+- `last_run_time`: The timestamp when the last wave execution finished.
+- `min_delay` / `max_delay`: Active randomized delay boundaries.

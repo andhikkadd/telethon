@@ -34,11 +34,20 @@ A resilient, modular, and fully documented Telegram userbot framework built on *
 ├── requirements.txt           # Python external dependencies
 ├── CHANGELOG.md               # Version history and releases log
 ├── DEPLOYMENT.md              # Production deployment guides
+├── GITHUB_WORKFLOW.md         # Git and deployment updates workflow
+├── BACKUP_RESTORE.md          # Backup and database restore guide
+├── SECURITY.md                # General security checklists
 ├── .env.example               # Secret configuration environment template
 ├── .gitignore                 # Git repository exclusion file
-├── data/                      # Persistent SQLite database directory
-├── sessions/                  # Telethon session file storage
-├── backups/                   # Temporary directory for zip/gpg backups
+├── data/                      # Persistent SQLite database directory (ignored by Git)
+├── sessions/                  # Telethon session file storage (ignored by Git)
+├── backups/                   # Temporary directory for zip/gpg backups (ignored by Git)
+├── services/                  # Business logic services layer
+│   ├── backup_service.py      # GPG zip backups manager
+│   ├── group_service.py       # Group resolution, health & diagnostic logic
+│   ├── settings_service.py    # Persisted key-value settings manager
+│   ├── template_service.py    # Message template validations
+│   └── wave_service.py        # Promotional wave sender orchestration
 ├── static/                    # Stylesheets and visual assets
 ├── templates/                 # Jinja2 HTML layout templates
 └── docs/                      # In-depth technical guides

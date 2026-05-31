@@ -1,137 +1,137 @@
-# Referensi Command Admin Userbot
+# Userbot Admin Commands Reference
 
-Halaman ini berisi daftar lengkap command admin yang tersedia pada Python Telegram Userbot Promo Framework. Semua command dimulai dengan awalan (prefix) `!`.
+This page provides a comprehensive guide to all admin commands available within the Telegram Userbot Promo Framework. All commands must be prefixed with `!`.
 
 > [!IMPORTANT]
-> Command di bawah ini hanya dapat dieksekusi oleh akun Master yang ditentukan di dalam `.env` (via `MASTER_ID` atau `MASTER_USERNAME`). Pengguna lain yang mencoba menjalankan command ini akan ditolak secara otomatis.
+> The commands below can only be executed by the authorized master account defined in `.env` (via `MASTER_ID` or `MASTER_USERNAME`). Messages from unauthorized users are silently dropped.
 
 ---
 
-## Daftar Command
+## Command Dictionary
 
-### 1. Kontrol Sistem & Status
+### 1. System Control & Diagnostics
 
 #### `!help` / `!menu`
-Tampilkan pesan bantuan berisi semua daftar command dan format penggunaannya.
+Displays the help menu listing all available commands and their usage formats.
 
 #### `!ping`
-Memeriksa apakah userbot merespons dan masih hidup.
-* **Respon**: `🏓 Pong! Bot promo aktif dan berjalan.`
+Verifies if the userbot process is active and responsive.
+* **Response**: `🏓 Pong! Bot is active and running.`
 
 #### `!status`
-Menampilkan detail status runtime bot saat ini.
-* **Detail yang Ditampilkan**:
-  - Status scheduler (`RUNNING` atau `PAUSED`)
-  - Waktu eksekusi wave terakhir
-  - Estimasi waktu eksekusi wave berikutnya
-  - Rentang delay saat ini (min/max menit)
-  - Jumlah target grup aktif dan diskip
-  - Jumlah template promo aktif di database
+Displays runtime configuration metrics of the userbot.
+* **Fields Displayed**:
+  - Scheduler Status (`RUNNING` or `PAUSED`)
+  - Timestamp of the last wave execution
+  - Estimated timestamp of the next wave execution
+  - Active wave delay ranges (minimum/maximum minutes)
+  - Number of target groups (Active vs Skipped)
+  - Total number of active message templates in the database
 
 #### `!server`
-Menampilkan metrik performa hosting/VPS tempat bot berjalan.
-* **Detail yang Ditampilkan**:
-  - Operating System dan versinya
-  - Versi Python runtime
-  - Uptime proses Bot
-  - Uptime Server
-  - Bar load CPU (%)
-  - Bar load RAM (%) beserta kapasitas terpakai dan total
-  - Bar load Disk (%) beserta kapasitas terpakai dan total
+Displays hosting server metrics.
+* **Fields Displayed**:
+  - Operating system details and kernel version
+  - Python runtime version
+  - Userbot process uptime
+  - System host uptime
+  - CPU utilization bar (%)
+  - RAM utilization bar (%) with active and total space
+  - Disk space utilization bar (%) with active and total capacity
 
 #### `!reload`
-Memuat ulang variabel dari file `.env` dan menyinkronkan kembali status in-memory dengan pengaturan terbaru di database. Gunakan command ini setelah melakukan edit database secara manual atau mengubah `.env`.
+Reloads configurations from the `.env` file and updates the in-memory state with database settings. Use this command after manually modifying environment variables or database tables.
 
 ---
 
-### 2. Manajemen Pengiriman Promo (Wave)
+### 2. Wave Scheduling & Dispatch
 
 #### `!pause`
-Menunda (pause) eksekusi wave promo otomatis.
-* **Efek**: Scheduler background akan berhenti men-trigger wave otomatis, namun handler command chat admin tetap aktif 24/7. Status `paused` akan disimpan ke database settings.
+Pauses the automatic wave scheduler.
+* **Behavior**: The background scheduler is suspended, but Telegram command handlers remain active 24/7. The paused state is saved to the database.
 
 #### `!resume`
-Mengaktifkan kembali (resume) eksekusi wave promo otomatis.
-* **Efek**: Scheduler akan menghitung interval random baru dan menjadwalkan wave berikutnya. Status `paused` diperbarui ke `0` di database.
+Resumes the automatic wave scheduler.
+* **Behavior**: The scheduler calculates a new randomized delay interval and schedules the next wave. The paused state is set to `0` in the database.
 
 #### `!wave`
-Memicu eksekusi 1 wave pengiriman pesan promo secara manual saat ini juga.
-* **Keamanan**: Dilengkapi anti double-wave lock. Jika ada wave otomatis atau manual lain yang sedang berjalan, command ini akan dibatalkan agar tidak terjadi penumpukan/spam.
+Immediately triggers a manual wave execution across all active target groups.
+* **Safety Lock**: Enforces a concurrency lock using `state.active_wave_task` to prevent simultaneous wave dispatches.
 
-#### `!setdelay <min_menit> <max_menit>`
-Mengubah rentang waktu tunda acak antar wave otomatis langsung dari chat Telegram.
-* **Contoh**: `!setdelay 30 120` (mengatur delay acak antara 30 hingga 120 menit).
-* **Efek**: Perubahan disimpan di database dan diterapkan mulai siklus scheduler berikutnya.
+#### `!setdelay <min_minutes> <max_minutes>`
+Modifies the randomized delay boundaries directly from Telegram chat.
+* **Example**: `!setdelay 30 120` (sets randomized intervals between 30 and 120 minutes).
+* **Behavior**: Updates settings in the database and applies them to the next scheduler cycle.
 
 #### `!logs`
-Menampilkan log ringkasan dari eksekusi wave terakhir yang tersimpan di database.
-* **Detail**: ID Wave, Waktu mulai, Durasi pengiriman total, Jumlah sukses/gagal, dan rincian per target grup (Success atau Failure beserta pesan error).
+Displays execution logs for the most recent wave.
+* **Behavior**: Outputs Wave ID, started time, elapsed duration, success/fail counts, and the specific delivery status of each group target.
 
 ---
 
-### 3. Manajemen Target Grup
+### 3. Target Group Management
 
 #### `!groups`
-Menampilkan semua target grup yang terdaftar di database lengkap dengan database ID (DB ID) dan status keaktifannya (`[✅ AKTIF]` atau `[❌ SKIP]`).
+Lists all registered target groups in the database with their database ID (DB ID) and status (`[✅ ACTIVE]` or `[❌ SKIPPED]`).
 
-#### `!addgroup <username_grup | link_grup>`
-Mendaftarkan grup baru ke database target promo.
-* **Format**:
-  - Username: `@username_grup` atau `username_grup`
-  - Link: `https://t.me/username_grup`
-* **Cara Kerja**: Bot akan mencoba mencari entitas grup tersebut secara online. Jika ditemukan, bot akan menyimpan Judul asli, Username, dan input mentah ke database dengan status Aktif secara default.
-* **Error**: Jika grup bersifat privat atau akun userbot Anda tidak memiliki akses, bot akan gagal melakukan resolve dan menampilkan pesan error detail.
+#### `!addgroup <username_or_link>`
+Registers a new group target in the database.
+* **Formats Supported**:
+  - Username: `@group_username` or `group_username`
+  - Public link: `https://t.me/group_username`
+* **Behavior**: Resolves the Telegram entity online. If found, retrieves the title, username, and raw input, then saves them to the database (marked ACTIVE by default).
+* **Errors**: If the group is private or the userbot lacks permissions to access/join it, the command displays a detailed resolution error.
 
-#### `!delgroup <DB_ID | username>`
-Menghapus grup target dari database promo secara permanen.
-* **Contoh**: `!delgroup 3` atau `!delgroup @group_test`
+#### `!delgroup <DB_ID_or_username>`
+Permanently deletes a group target from the database.
+* **Example**: `!delgroup 3` or `!delgroup @group_test`
 
-#### `!skip <DB_ID | username>`
-Menunda pengiriman promo ke grup tertentu tanpa menghapusnya dari database.
-* **Contoh**: `!skip 2` atau `!skip @group_test`
-* **Efek**: Status `is_skipped` diubah menjadi `1`. Grup akan dilewati saat wave otomatis maupun manual berjalan.
+#### `!skip <DB_ID_or_username>`
+Temporarily skips a group target during wave dispatches without deleting it.
+* **Example**: `!skip 2` or `!skip @group_test`
+* **Behavior**: Sets `is_skipped` to `1`. The group will be ignored in both automatic and manual waves.
 
-#### `!unskip <DB_ID | username>`
-Mengaktifkan kembali pengiriman promo ke grup yang sebelumnya diskip.
-* **Contoh**: `!unskip 2`
+#### `!unskip <DB_ID_or_username>`
+Re-enables a skipped group target.
+* **Example**: `!unskip 2`
 
 ---
 
-### 4. Manajemen Template Promo
+### 4. Template & Test Management
 
 #### `!templates`
-Menampilkan semua template pesan promo yang terdaftar di database, lengkap dengan ID Template, status keaktifan, dan cuplikan singkat isi pesan.
+Lists all promotional message templates saved in the database, showing their ID, status, and a text preview.
 
-#### `!addtemplate <isi_pesan>`
-Menambahkan template pesan baru ke database. Mendukung baris baru (newline), emoji, dan format markdown bawaan Telegram.
-* **Contoh**:
+#### `!addtemplate <message_body>`
+Adds a new promotional message template to the database. Supports newlines, emojis, and standard Telegram markdown styling.
+* **Example**:
   ```text
-  !addtemplate Promo Spesial Akhir Bulan! 🚀
-  Dapatkan diskon 50% untuk semua layanan kami.
-  Hubungi @admin sekarang juga!
+  !addtemplate Weekend Special Offer! 🚀
+  Enjoy 50% off all packages.
+  DM @admin for details!
   ```
 
-#### `!deltemplate <ID_template>`
-Menghapus template pesan dari database berdasarkan ID database-nya.
-* **Contoh**: `!deltemplate 2`
+#### `!deltemplate <template_id>`
+Permanently deletes a template from the database using its ID.
+* **Example**: `!deltemplate 2`
 
 #### `!preview`
-Memilih secara acak salah satu template aktif di database dan mengirimkannya ke ruang chat admin sebagai contoh preview tampilan pesan.
+Randomly selects an active template from the database and sends it to the admin chat as a layout check.
 
-#### `!test <DB_ID | username> [pesan_kustom]`
-Mengirimkan pesan uji coba ke satu grup target tertentu saat ini juga untuk memastikan format dan koneksi aman.
-* **Keterangan**: Jika `[pesan_kustom]` tidak diisi, bot secara acak akan mengirimkan salah satu template aktif di database.
-* **Contoh**: `!test 5 Halo ini uji coba` atau `!test @group_test`
+#### `!test <DB_ID_or_username> [custom_message]`
+Dispatches a test message immediately to a single target group to verify write permissions.
+* **Behavior**: If `[custom_message]` is omitted, the bot selects an active template randomly.
+* **Example**: `!test 5 Hello, this is a test` or `!test @group_test`
 
 ---
 
-### 5. Cadangan Data (Backup)
+### 5. Database & Security Backups
 
 #### `!backup`
-Memicu pembuatan file backup cadangan instan.
-* **Proses**:
-  1. Mengompresi source code penting, database SQLite (`data/bot.db`), sesi Telegram (`sessions/`), dan dokumentasi ke format `.zip`.
-  2. Melakukan enkripsi berkas `.zip` menggunakan GPG dengan standar keamanan **AES256** dan password `BACKUP_PASSWORD` yang diatur di `.env`.
-  3. Mengirimkan berkas `.gpg` yang dihasilkan ke target `BACKUP_TARGET` di Telegram.
-  4. Menghapus file `.zip` dan `.gpg` cadangan sementara dari server setelah pengiriman selesai untuk menjaga ruang penyimpanan disk.
-* **Catatan**: Jika server tidak terinstall utilitas `gpg`, bot hanya akan mengirimkan file `.zip` biasa **hanya jika** `ALLOW_UNENCRYPTED_BACKUP` bernilai `true` di `.env`. Jika diset `false`, backup akan dibatalkan demi keamanan.
+Immediately triggers an encrypted system backup.
+* **Behavior**:
+  1. Gathers all python source files, databases (`data/bot.db`), active session files (`sessions/`), and guides into a ZIP archive.
+  2. Encrypts the ZIP archive with GPG using **AES256** symmetric encryption and the `BACKUP_PASSWORD` from `.env`.
+  3. Sends the encrypted `.gpg` file to your configured `BACKUP_TARGET` channel.
+  4. Deletes the temporary unencrypted ZIP and GPG files from the disk.
+* **Fallback**: If GPG is not available, the bot falls back to an unencrypted `.zip` archive only if `ALLOW_UNENCRYPTED_BACKUP` is set to `true` in `.env`. Otherwise, the backup fails for security reasons.
