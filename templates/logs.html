@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Logs - Userbot Control Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-8 col-sm-12">
+        <h2 class="fw-bold m-0"><i class="bi bi-journal-text text-primary me-2"></i>Wave Delivery Logs</h2>
+        <p class="text-secondary mb-0">Review past promotional execution campaigns and details.</p>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Wave history summary list -->
+    <div class="col-lg-5 mb-4">
+        <div class="glass-card">
+            <h5 class="fw-bold mb-3"><i class="bi bi-history text-primary me-2"></i>Execution Campaigns</h5>
+            
+            {% if not waves %}
+            <div class="text-center py-5 text-secondary">
+                <i class="bi bi-clock-history" style="font-size: 2.5rem;"></i>
+                <p class="mt-3">No wave execution records found.</p>
+            </div>
+            {% else %}
+            <div class="list-group list-group-flush border-0">
+                {% for w in waves %}
+                <a href="/logs?wave_id={{ w.id }}" class="list-group-item list-group-item-action bg-transparent border-bottom border-secondary border-opacity-50 py-3 px-0 text-white d-flex justify-content-between align-items-center {% if selected_wave_id == w.id %}border-start border-primary border-4 ps-2{% endif %}">
+                    <div>
+                        <div class="fw-bold small">Wave #{{ w.id }}</div>
+                        <div class="text-muted small mt-1">{{ w.started_at.replace('T', ' ')[:16] }}</div>
+                    </div>
+                    <div class="text-end">
+                        <div>
+                            <span class="text-success small fw-bold"><i class="bi bi-check-circle me-1"></i>{{ w.success_count }}</span> / 
+                            <span class="text-danger small fw-bold"><i class="bi bi-x-circle me-1"></i>{{ w.fail_count }}</span>
+                        </div>
+                        <span class="badge-custom {% if w.status == 'completed' %}badge-active{% else %}badge-flood{% endif %} py-1 mt-1 small">{{ w.status }}</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Wave items detail view -->
+    <div class="col-lg-7 mb-4">
+        <div class="glass-card">
+            {% if not selected_wave_id %}
+            <div class="text-center py-5 text-secondary">
+                <i class="bi bi-receipt-cutoff" style="font-size: 3rem;"></i>
+                <p class="mt-3">Select an execution campaign from the left panel to display delivery details.</p>
+            </div>
+            {% else %}
+            <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom border-secondary">
+                <h5 class="fw-bold m-0"><i class="bi bi-list-task text-primary me-2"></i>Details for Wave #{{ selected_wave_id }}</h5>
+                <span class="badge-custom badge-active">ID: {{ selected_wave_id }}</span>
+            </div>
+
+            {% if not items %}
+            <div class="text-center py-5 text-secondary">
+                <i class="bi bi-dash-circle" style="font-size: 2.5rem;"></i>
+                <p class="mt-2">No individual group dispatch logs found for this wave.</p>
+            </div>
+            {% else %}
+            <div class="table-responsive">
+                <table class="table table-custom m-0">
+                    <thead>
+                        <tr>
+                            <th>Group Title</th>
+                            <th>Status</th>
+                            <th>Info / Error Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td>
+                                <div class="fw-semibold small">{{ item.group_title }}</div>
+                                <div class="text-muted small">ID: {{ item.group_id }}</div>
+                            </td>
+                            <td>
+                                {% if item.status == 'success' %}
+                                <span class="badge-custom badge-active"><i class="bi bi-check-circle-fill me-1"></i>Success</span>
+                                {% elif item.status == 'unverified' %}
+                                <span class="badge-custom badge-flood"><i class="bi bi-question-circle me-1"></i>Unverified</span>
+                                {% else %}
+                                <span class="badge-custom badge-error"><i class="bi bi-exclamation-octagon me-1"></i>Failed</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if item.status == 'success' or item.status == 'unverified' %}
+                                <span class="text-secondary">Message ID: <code>{{ item.message_id }}</code></span>
+                                {% else %}
+                                <span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>{{ item.error_message }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+# Environments and Secrets
+.env
+.venv
+venv/
+ENV/
+env/
+
+# Telethon session details
+*.session
+*.session-journal
+sessions/*.session
+sessions/*.session-journal
+
+# SQLite database files
+data/*.db
+data/*.db-journal
+*.db
+*.db-journal
+
+# Compiled Python files
+__pycache__/
+**pycache**/
+*.py[cod]
+*$py.class
+
+# Temporary backups and local files
+backups/*
+backups/*.zip
+backups/*.gpg
+backups/*.tar.gz
+
+# System logs
+*.log
+logs/
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.swp
+
+# Agent folders
+.agents/
+production_artifacts/

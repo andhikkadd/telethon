@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Userbot Control Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-8 col-sm-12">
+        <h2 class="fw-bold m-0"><i class="bi bi-speedometer2 text-primary me-2"></i>Dashboard Overview</h2>
+        <p class="text-secondary mb-0">Monitor and manage your Telegram promotional operations.</p>
+    </div>
+    <div class="col-md-4 col-sm-12 text-md-end mt-sm-3 mt-md-0">
+        <div class="d-inline-flex gap-2">
+            {% if is_paused %}
+            <form action="/actions/resume" method="post" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-custom btn-success-custom">
+                    <i class="bi bi-play-fill me-1"></i> Resume Bot
+                </button>
+            </form>
+            {% else %}
+            <form action="/actions/pause" method="post" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-custom btn-warning-custom">
+                    <i class="bi bi-pause-fill me-1"></i> Pause Bot
+                </button>
+            </form>
+            {% endif %}
+
+            <button class="btn btn-custom btn-accent" data-bs-toggle="modal" data-bs-target="#waveModal" {% if
+                is_wave_running %}disabled{% endif %}>
+                <i class="bi bi-rocket-takeoff-fill me-1"></i> Trigger Wave
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Confirmation for Trigger Wave -->
+<div class="modal fade" id="waveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-white border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Confirm
+                    Manual Wave</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-secondary">
+                <p>Are you sure you want to trigger a manual wave of messages right now?</p>
+                <p class="mb-0">This will immediately queue messages to all active target groups that are not currently
+                    under rate-limit cooldown. Use with care to avoid account restrictions.</p>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-custom btn-secondary-custom"
+                    data-bs-dismiss="modal">Cancel</button>
+                <form action="/actions/wave" method="post" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-custom btn-accent">Yes, Send Wave</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bento Grid Stats -->
+<div class="bento-grid mb-4">
+    <!-- Running status card -->
+    <div class="glass-card d-flex flex-column justify-content-between">
+        <div>
+            <h6 class="text-secondary text-uppercase fw-semibold mb-3">System Status</h6>
+            {% if is_paused %}
+            <span class="badge-custom badge-error"><i class="bi bi-pause-circle-fill me-1"></i> Scheduler Paused</span>
+            {% else %}
+            <span class="badge-custom badge-active"><i class="bi bi-play-circle-fill me-1"></i> Scheduler Active</span>
+            {% endif %}
+        </div>
+        <div class="mt-4">
+            <p class="text-secondary small mb-1">Active Wave Status:</p>
+            {% if is_wave_running %}
+            <span class="text-warning fw-semibold"><i class="bi bi-arrow-repeat spin-slow me-1"></i> Dispatched &
+                Messaging...</span>
+            {% else %}
+            <span class="text-muted"><i class="bi bi-dash-circle me-1"></i> Idle</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Scheduling Timers card -->
+    <div class="glass-card">
+        <h6 class="text-secondary text-uppercase fw-semibold mb-3">Scheduler Timeline</h6>
+        <div class="mb-3">
+            <span class="text-secondary small">Last Wave Dispatched:</span>
+            <div class="fw-bold mt-1 text-truncate">{{ last_wave_time }}</div>
+        </div>
+        <div>
+            <span class="text-secondary small">Next Wave Expected:</span>
+            <div class="fw-bold mt-1 text-truncate">{{ next_wave_time }}</div>
+        </div>
+    </div>
+
+    <!-- Target groups metrics -->
+    <div class="glass-card">
+        <h6 class="text-secondary text-uppercase fw-semibold mb-2">Target Groups</h6>
+        <div class="stat-val">{{ total_groups }}</div>
+        <div class="d-flex justify-content-between small border-top border-secondary pt-2 mt-2">
+            <span class="text-success"><i class="bi bi-check-circle me-1"></i>{{ active_groups }} Active</span>
+            <span class="text-secondary"><i class="bi bi-slash-circle me-1"></i>{{ skipped_groups }} Skipped</span>
+            <span class="text-danger"><i class="bi bi-exclamation-octagon me-1"></i>{{ failed_groups }} Failed</span>
+        </div>
+    </div>
+
+    <!-- Health groups metrics -->
+    <div class="glass-card">
+        <h6 class="text-secondary text-uppercase fw-semibold mb-2">Group Channels Status</h6>
+        <div class="row text-center mt-3">
+            <div class="col-4 border-end border-secondary">
+                <div class="fw-bold text-warning">{{ flood_groups }}</div>
+                <div class="text-muted small">Flood</div>
+            </div>
+            <div class="col-4 border-end border-secondary">
+                <div class="fw-bold text-danger">{{ muted_groups }}</div>
+                <div class="text-muted small">Muted</div>
+            </div>
+            <div class="col-4">
+                <div class="fw-bold text-info">{{ unverified_groups }}</div>
+                <div class="text-muted small">Unverif</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Server health -->
+    <div class="col-md-6 mb-4">
+        <div class="glass-card h-100">
+            <h5 class="fw-bold mb-4"><i class="bi bi-cpu text-primary me-2"></i>Server Diagnostics</h5>
+
+            <div class="mb-3">
+                <div class="d-flex justify-content-between mb-1 small">
+                    <span class="text-secondary">CPU Usage</span>
+                    <span class="fw-bold">{{ cpu_pct }}%</span>
+                </div>
+                <div class="progress bg-dark" style="height: 8px;">
+                    <div class="progress-bar bg-accent" style="width: {{ cpu_pct }}%"></div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <div class="d-flex justify-content-between mb-1 small">
+                    <span class="text-secondary">RAM Usage ({{ ram_used }} / {{ ram_total }})</span>
+                    <span class="fw-bold">{{ ram_pct }}%</span>
+                </div>
+                <div class="progress bg-dark" style="height: 8px;">
+                    <div class="progress-bar bg-accent-success" style="width: {{ ram_pct }}%"></div>
+                </div>
+            </div>
+
+            <div class="row text-center pt-2 border-top border-secondary">
+                <div class="col-6 border-end border-secondary">
+                    <div class="fw-bold">{{ server_uptime }}</div>
+                    <div class="text-muted small">Server Uptime</div>
+                </div>
+                <div class="col-6">
+                    <div class="fw-bold">{{ bot_uptime }}</div>
+                    <div class="text-muted small">Bot Uptime</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active configuration summaries -->
+    <div class="col-md-6 mb-4">
+        <div class="glass-card h-100 d-flex flex-column justify-content-between">
+            <div>
+                <h5 class="fw-bold mb-4"><i class="bi bi-gear text-primary me-2"></i>Active Scheduling</h5>
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <span class="text-muted small">Delay Limits:</span>
+                        <div class="fw-semibold">{{ min_delay }} - {{ max_delay }} minutes</div>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted small">Inter-Group Delay:</span>
+                        <div class="fw-semibold">{{ delay_between }} seconds</div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-6">
+                        <span class="text-muted small">Active Message Templates:</span>
+                        <div class="fw-semibold">{{ total_templates }} templates</div>
+                    </div>
+                    <div class="col-6">
+                        <span class="text-muted small">GPG Backups Encrypted:</span>
+                        <div class="fw-semibold">{% if is_gpg %}🔒 AES256{% else %}⚠️ Unencrypted{% endif %}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-3 border-top border-secondary text-end">
+                <a href="/settings" class="btn btn-custom btn-secondary-custom btn-sm"><i
+                        class="bi bi-pencil-square me-1"></i>Modify Configurations</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

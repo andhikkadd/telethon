@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Userbot Control Panel{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-8 col-sm-12">
+        <h2 class="fw-bold m-0"><i class="bi bi-sliders text-primary me-2"></i>System Settings</h2>
+        <p class="text-secondary mb-0">Adjust system parameters and trigger encrypted backups.</p>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Form settings -->
+    <div class="col-lg-7 mb-4">
+        <div class="glass-card">
+            <h5 class="fw-bold mb-4"><i class="bi bi-gear text-primary me-2"></i>Configure Scheduler</h5>
+            
+            <form action="/settings" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="min_delay" class="form-label text-secondary small fw-semibold">Minimum Delay (Minutes)</label>
+                        <input type="number" class="form-control form-control-custom" id="min_delay" name="min_delay" value="{{ settings.min_delay }}" min="1" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="max_delay" class="form-label text-secondary small fw-semibold">Maximum Delay (Minutes)</label>
+                        <input type="number" class="form-control form-control-custom" id="max_delay" name="max_delay" value="{{ settings.max_delay }}" min="1" required>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="delay_between_groups" class="form-label text-secondary small fw-semibold">Inter-Group Wait Delay (Seconds)</label>
+                    <input type="number" class="form-control form-control-custom" id="delay_between_groups" name="delay_between_groups" value="{{ settings.delay_between_groups }}" min="1" required>
+                    <div class="form-text text-muted small mt-1">Jeda waktu tunda pengiriman antar grup untuk menghindari spam blocks Telegram (Saran: 15-30s).</div>
+                </div>
+
+                <hr class="border-secondary my-4">
+
+                <h6 class="fw-bold text-secondary mb-3"><i class="bi bi-envelope-paper me-1"></i>Reporting & Operations</h6>
+
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="send_report" name="send_report" {% if settings.send_report == '1' %}checked{% endif %}>
+                        <label class="form-check-label text-secondary small fw-semibold" for="send_report">Send Wave Delivery Report to Telegram</label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="report_target" class="form-label text-secondary small fw-semibold">Report & Backup Telegram Target</label>
+                    <input type="text" class="form-control form-control-custom" id="report_target" name="report_target" value="{{ settings.report_target }}" placeholder="me or telegram ID" required>
+                    <div class="form-text text-muted small mt-1">Username target atau ID chat Telegram tempat bot mengirimkan file backup dan laporan wave.</div>
+                </div>
+
+                <div class="mb-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="run_wave_on_start" name="run_wave_on_start" {% if settings.run_wave_on_start == '1' %}checked{% endif %}>
+                        <label class="form-check-label text-secondary small fw-semibold" for="run_wave_on_start">Run Wave Automatically on Startup</label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-custom btn-accent w-100"><i class="bi bi-save me-1"></i>Save Settings</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Backup panel -->
+    <div class="col-lg-5 mb-4">
+        <div class="glass-card d-flex flex-column justify-content-between h-100">
+            <div>
+                <h5 class="fw-bold mb-3"><i class="bi bi-shield-lock text-primary me-2"></i>Security Backup</h5>
+                <p class="text-secondary small">Creates an instant backup file including SQLite databases, configurations, Telethon session files, and docs.</p>
+                
+                <div class="alert bg-dark border-secondary p-3 small text-secondary mt-3">
+                    <div class="fw-semibold text-white mb-2"><i class="bi bi-info-circle me-1"></i>Backup Encryptions Details:</div>
+                    • Standard: **🔒 GPG AES256 Symmetric**<br>
+                    • Password: Set in <code>BACKUP_PASSWORD</code> (.env)<br>
+                    • Fallback: Zip Unencrypted if GPG not installed (Only if allowed)
+                </div>
+            </div>
+
+            <div class="pt-4 border-top border-secondary text-end mt-4">
+                <form action="/backup/run" method="post" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-custom btn-success-custom w-100"><i class="bi bi-archive-fill me-1"></i>Run Encrypted Backup</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
