@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import random
 from datetime import datetime
 from telethon import events
@@ -407,7 +408,11 @@ async def handle_backup(event):
         await event.reply(f"✅ **Backup sukses terkirim** ke target `{config.BACKUP_TARGET}`.")
     except Exception as e:
         sanitized_err = sanitize_logs(str(e))
-        await event.reply(f"❌ **Backup GAGAL**: {type(e).__name__}: {sanitized_err}")
+        await event.reply(
+            f"❌ **Backup GAGAL**\n"
+            f"• **Error**: `{type(e).__name__}`\n"
+            f"• **Pesan**: `{sanitized_err}`"
+        )
 
 async def handle_logs(event):
     last_wave = await db.fetchone("SELECT * FROM wave_logs ORDER BY id DESC LIMIT 1")
