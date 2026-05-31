@@ -35,14 +35,15 @@ app.add_middleware(
     max_age=3600 * 24 # 1 day session
 )
 
-# Setup Templates and Static files
-templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Register Jinja2 template context processor to inject csrf_token in all templates
-@templates.context_processor
 def inject_csrf(request: Request):
     return {"csrf_token": request.session.get("csrf_token", "")}
+
+# Setup Templates and Static files
+templates = Jinja2Templates(
+    directory="templates",
+    context_processors=[inject_csrf]
+)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # In-memory stores for security features
 failed_login_attempts = {}
