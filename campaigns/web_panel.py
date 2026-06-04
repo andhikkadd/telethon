@@ -135,7 +135,7 @@ async def get_login(request: Request):
     if request.session.get("logged_in"):
         return RedirectResponse(url="/dashboard", status_code=303)
     context = {"request": request, "is_logged_in": False, **get_flash_context(request)}
-    return templates.TemplateResponse("login.html", context)
+    return templates.TemplateResponse(request, "login.html", context)
 
 @app.post("/login")
 async def post_login(request: Request, username: str = Form(...), password: str = Form(...)):
@@ -223,7 +223,7 @@ async def get_dashboard(request: Request):
         "is_gpg": backup_svc.is_gpg_available(),
         **get_flash_context(request)
     }
-    return templates.TemplateResponse("dashboard.html", context)
+    return templates.TemplateResponse(request, "dashboard.html", context)
 
 @app.post("/actions/pause")
 async def action_pause(request: Request):
@@ -263,7 +263,7 @@ async def get_groups(request: Request):
         "groups": groups_list,
         **get_flash_context(request)
     }
-    return templates.TemplateResponse("groups.html", context)
+    return templates.TemplateResponse(request, "groups.html", context)
 
 @app.post("/groups/add")
 async def post_add_group(request: Request, raw_input: str = Form(...)):
@@ -353,7 +353,7 @@ async def get_templates(request: Request):
         "templates": templates_list,
         **get_flash_context(request)
     }
-    return templates.TemplateResponse("templates.html", context)
+    return templates.TemplateResponse(request, "templates.html", context)
 
 @app.post("/templates/add")
 async def post_add_template(request: Request, text: str = Form(...)):
@@ -395,7 +395,7 @@ async def get_settings(request: Request):
         "settings": settings_dict,
         **get_flash_context(request)
     }
-    return templates.TemplateResponse("settings.html", context)
+    return templates.TemplateResponse(request, "settings.html", context)
 
 @app.post("/settings")
 async def post_save_settings(
@@ -460,7 +460,7 @@ async def get_logs(request: Request, wave_id: Optional[int] = None):
         "items": items,
         **get_flash_context(request)
     }
-    return templates.TemplateResponse("logs.html", context)
+    return templates.TemplateResponse(request, "logs.html", context)
 
 @app.get("/health")
 async def get_health(request: Request):
@@ -503,7 +503,7 @@ async def get_health(request: Request):
         "broken_groups": broken_groups,
         **get_flash_context(request)
     }
-    return templates.TemplateResponse("health.html", context)
+    return templates.TemplateResponse(request, "health.html", context)
 
 @app.post("/health/autoclean")
 async def post_autoclean(request: Request):
