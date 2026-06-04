@@ -5,6 +5,7 @@ import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.background import BackgroundTask
 from dotenv import load_dotenv, dotenv_values
 
 # Load environment variables
@@ -344,7 +345,7 @@ async def proxy_request(request: Request, target_url: str):
             res.aiter_bytes(),
             status_code=res.status_code,
             headers=res_headers,
-            background=asyncio.Task(res.aclose)
+            background=BackgroundTask(res.aclose)
         )
     except Exception as e:
         logger.error(f"Proxy failed for target {url}: {e}")

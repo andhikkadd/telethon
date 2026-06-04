@@ -27,13 +27,6 @@ logger = logging.getLogger("WebPanel")
 # Initialize FastAPI App
 app = FastAPI(title="Userbot Control Panel", docs_url=None, redoc_url=None)
 
-# Add Session Middleware
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=config.WEB_SESSION_SECRET,
-    session_cookie="userbot_session",
-    max_age=3600 * 24 # 1 day session
-)
 
 def inject_csrf(request: Request):
     return {"csrf_token": request.session.get("csrf_token", "")}
@@ -115,6 +108,14 @@ async def csrf_and_auth_middleware(request: Request, call_next):
             return RedirectResponse(url=referer, status_code=303)
 
     return await call_next(request)
+
+# Add Session Middleware (Must be registered after csrf_and_auth_middleware so it wraps it)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=config.WEB_SESSION_SECRET,
+    session_cookie="userbot_session",
+    max_age=3600 * 24 # 1 day session
+)
 
 def get_flash_context(request: Request) -> dict:
     """Retrieve flash messages from the session and delete them."""
