@@ -643,6 +643,13 @@ async def root_route(request: Request):
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def proxy_wildcard(request: Request, path: str):
     """Catches all other routes and forwards them to the selected sub-app."""
+    # Route static assets directly based on name if possible to prevent cache/routing collisions
+    if path.startswith("static/"):
+        if "campaigns" in path:
+            return await proxy_request(request, f"{CAMPAIGNS_URL}/{path}")
+        elif "assistant" in path:
+            return await proxy_request(request, f"{ASSISTANT_URL}/{path}")
+
     # Bypass auth for public routes (e.g. favicon, static assets)
     if path in ("favicon.ico",) or path.startswith("static/"):
         pass
