@@ -69,7 +69,7 @@ class GroupService:
             return await db.fetchone("SELECT * FROM groups WHERE username = ?", (clean_target,))
 
     @staticmethod
-    async def add_group(raw_input: str) -> dict:
+    async def add_group(raw_input: str, client=None) -> dict:
         """Resolve group entity via Telethon and add to database."""
         if not raw_input or not raw_input.strip():
             raise ValueError("Input username/link is invalid.")
@@ -90,7 +90,8 @@ class GroupService:
         if existing:
             return {"status": "exists", "group": existing}
 
-        client = telegram_client.get_client()
+        if client is None:
+            client = telegram_client.get_client()
         try:
             invite_hash = None
             if clean_target.startswith("joinchat/"):
@@ -285,9 +286,10 @@ class GroupService:
         )
 
     @staticmethod
-    async def verify_message_delivery(group_username_or_id: str, sent_msg_id: int) -> bool:
+    async def verify_message_delivery(group_username_or_id: str, sent_msg_id: int, client=None) -> bool:
         """Fetch the last 5 messages from the group to check if our sent message is visible."""
-        client = telegram_client.get_client()
+        if client is None:
+            client = telegram_client.get_client()
         try:
             target = group_username_or_id
             if target.replace("-", "").isdigit():
@@ -303,13 +305,14 @@ class GroupService:
             return False
 
     @staticmethod
-    async def check_group_entity(group_id: int) -> dict:
+    async def check_group_entity(group_id: int, client=None) -> dict:
         """Query entity info from Telegram API and update status."""
         group = await GroupService.get_group(group_id)
         if not group:
             return {"status": "not_found", "error": "Group not found in database"}
             
-        client = telegram_client.get_client()
+        if client is None:
+            client = telegram_client.get_client()
         target = group["username"]
         if target.replace("-", "").isdigit():
             target = int(target)
@@ -352,13 +355,14 @@ class GroupService:
         return {"total": len(groups), "success": success_count, "failed": failed_count}
 
     @staticmethod
-    async def test_group_message(group_id: int, custom_msg: str = None) -> bool:
+    async def test_group_message(group_id: int, custom_msg: str = None, client=None) -> bool:
         """Send a test/manual message to a single group and update health status."""
         group = await GroupService.get_group(group_id)
         if not group:
             raise ValueError("Group not found")
             
-        client = telegram_client.get_client()
+        if client is None:
+            client = telegram_client.get_client()
         target = group["username"]
         if target.replace("-", "").isdigit():
             target = int(target)

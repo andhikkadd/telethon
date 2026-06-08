@@ -81,20 +81,19 @@ async def main():
     scheduler_task = None
     backup_task = None
     try:
-        # We start the client connection. If it blocks or fails, we log it but keep the server running.
-        me = await telegram_client.start_client()
-        client_started = True
+        # We start all client connections. If they block or fail, we log it but keep the server running.
+        active_clients = await telegram_client.start_all_clients()
+        client_started = len(active_clients) > 0
         
-        # Register commands event listeners
-        await commands.register_handlers()
+        # Register commands event listeners on all active clients
+        await commands.register_handlers(active_clients)
         
         # Start scheduler background task
         scheduler_task = asyncio.create_task(scheduler.start_scheduler())
         # Start auto-backup scheduler background task
         backup_task = asyncio.create_task(scheduler.start_auto_backup_scheduler())
     except Exception as e:
-        logger.error(f"Could not initialize Telegram client: {e}. Running in Web-Panel only mode.")
-        logger.info("Please configure real API_ID / API_HASH and run main.py interactively to log in.")
+        logger.error(f"Could not initialize Telegram clients: {e}. Running in Web-Panel only mode.")
     
     # Setup graceful shutdown handlers
     loop = asyncio.get_running_loop()

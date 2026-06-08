@@ -8,8 +8,9 @@ from typing import Optional
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
+from pathlib import Path
 
 import config
 from database import db
@@ -409,7 +410,8 @@ async def post_save_settings(
     delay_between_groups: int = Form(...),
     send_report: Optional[str] = Form(None),
     report_target: str = Form(...),
-    run_wave_on_start: Optional[str] = Form(None)
+    run_wave_on_start: Optional[str] = Form(None),
+    control_group: str = Form("")
 ):
     try:
         # Input Validation Checks
@@ -428,7 +430,8 @@ async def post_save_settings(
             delay_between_groups=delay_between_groups,
             send_report=(send_report is not None),
             report_target=report_target.strip(),
-            run_wave_on_start=(run_wave_on_start is not None)
+            run_wave_on_start=(run_wave_on_start is not None),
+            control_group=control_group
         )
         
         # Apply parameters to running state immediately
@@ -532,23 +535,178 @@ async def post_run_backup(request: Request):
         return RedirectResponse(url="/settings", status_code=303)
 
     try:
-        backup_path = await backup_svc.create_backup()
+        backup_paths = await backup_svc.create_backup()
         # Send backup to Telegram
         client = telegram_client.get_client()
-        report_target = await settings_svc.get_setting("report_target", config.REPORT_TARGET)
-        if isinstance(report_target, str):
-            cleaned_tgt = report_target.strip()
-            if cleaned_tgt.replace("-", "").isdigit():
-                report_target = int(cleaned_tgt)
+        report_target_raw = await settings_svc.get_setting("report_target", config.REPORT_TARGET)
+        from utils import resolve_target_entity
+        resolved_target = await resolve_target_entity(client, report_target_raw)
         
-        caption_msg = f"🔒 **Backup Proyek Terenkripsi GPG**\n• **Dibuat**: `{datetime.now().isoformat()}`\n• **Berkas**: `{backup_path.split(chr(92))[-1]}`"
-        await client.send_file(report_target, backup_path, caption=caption_msg)
-        
-        # Clean backup file from local disk to save space
-        backup_svc.clean_backup_file(backup_path)
-        
-        request.session["flash_success"] = f"Encrypted backup generated and transmitted to {report_target}."
+        for path in backup_paths:
+            basename = os.path.basename(path)
+            is_gpg = path.endswith(".gpg")
+            caption_msg = f"🔒 **Backup: {basename}**\n• **Dibuat**: `{datetime.now().isoformat()}`\n• **Format**: {'🔒 Encrypted GPG' if is_gpg else '⚠️ ZIP Fallback'}"
+            await client.send_file(resolved_target, path, caption=caption_msg)
+            
+            # Clean backup file from local disk to save space
+            backup_svc.clean_backup_file(path)
+            
+        request.session["flash_success"] = f"Backup generated and transmitted {len(backup_paths)} files successfully to {report_target_raw}."
     except Exception as e:
         request.session["flash_danger"] = f"Backup failed: {e}"
         
     return RedirectResponse(url="/settings", status_code=303)
+
+@app.get("/sessions")
+async def get_sessions(request: Request):
+    if not request.session.get("logged_in"):
+        return RedirectResponse(url="/login", status_code=303)
+        
+    session_files = telegram_client.get_session_files()
+    default_stem = Path(config.SESSION_NAME).stem
+    
+    sessions_data = []
+    for name in session_files:
+        client = telegram_client.get_client(name)
+        is_default = (name == default_stem)
+        
+        authorized = False
+        user_details = None
+        try:
+            # Check authorization state
+            if client.is_connected() and await client.is_user_authorized():
+                authorized = True
+                me = await client.get_me()
+                user_details = {
+                    "first_name": me.first_name,
+                    "username": me.username
+                }
+        except Exception:
+            pass
+            
+        sessions_data.append({
+            "name": name,
+            "is_default": is_default,
+            "authorized": authorized,
+            "user_details": user_details
+        })
+        
+    context = {
+        "request": request,
+        "is_logged_in": True,
+        "active_page": "sessions",
+        "sessions": sessions_data,
+        **get_flash_context(request)
+    }
+    return templates.TemplateResponse(request, "sessions.html", context)
+
+@app.post("/sessions/request-code")
+async def post_request_code(request: Request, phone_number: str = Form(...)):
+    if not request.session.get("logged_in"):
+        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
+        
+    phone = phone_number.strip().replace(" ", "")
+    if not phone.startswith("+"):
+        return JSONResponse({"status": "error", "message": "Phone number must start with '+'"})
+        
+    try:
+        # Clean phone number for safe session filename
+        safe_name = phone.replace("+", "")
+        client = telegram_client.get_client(safe_name)
+        
+        await client.connect()
+        
+        # Clean stale logins
+        now = datetime.now()
+        for k, v in list(telegram_client.pending_logins.items()):
+            if (now - v["created_at"]).total_seconds() > 600:
+                try:
+                    await v["client"].disconnect()
+                except Exception:
+                    pass
+                telegram_client.pending_logins.pop(k, None)
+                
+        res = await client.send_code_request(phone)
+        
+        telegram_client.pending_logins[phone] = {
+            "client": client,
+            "phone_code_hash": res.phone_code_hash,
+            "created_at": now
+        }
+        
+        return JSONResponse({"status": "success", "phone_number": phone})
+    except Exception as e:
+        logger.error(f"Failed to send code request to {phone}: {e}", exc_info=True)
+        return JSONResponse({"status": "error", "message": str(e)})
+
+@app.post("/sessions/submit-otp")
+async def post_submit_otp(
+    request: Request, 
+    phone_number: str = Form(...), 
+    otp_code: str = Form(...),
+    two_factor_password: str = Form(None)
+):
+    if not request.session.get("logged_in"):
+        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
+        
+    phone = phone_number.strip().replace(" ", "")
+    pending = telegram_client.pending_logins.get(phone)
+    if not pending:
+        return JSONResponse({"status": "error", "message": "Session expired or not found. Please request code again."})
+        
+    client = pending["client"]
+    phone_code_hash = pending["phone_code_hash"]
+    
+    from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
+    try:
+        await client.sign_in(
+            phone=phone,
+            code=otp_code.strip(),
+            password=two_factor_password or "",
+            phone_code_hash=phone_code_hash
+        )
+        # Sign in successful! Clean up pending
+        telegram_client.pending_logins.pop(phone, None)
+        
+        # Cache dialogs
+        await client.get_dialogs()
+        
+        return JSONResponse({"status": "success", "message": "Successfully authenticated!"})
+    except SessionPasswordNeededError:
+        return JSONResponse({"status": "password_required", "message": "2FA password is required."})
+    except (PhoneCodeInvalidError, PhoneCodeExpiredError) as err:
+        return JSONResponse({"status": "error", "message": f"OTP Error: {err}"})
+    except Exception as e:
+        logger.error(f"OTP authentication failed for {phone}: {e}", exc_info=True)
+        return JSONResponse({"status": "error", "message": str(e)})
+
+@app.post("/sessions/delete")
+async def post_delete_session(request: Request, session_name: str = Form(...)):
+    if not request.session.get("logged_in"):
+        return RedirectResponse(url="/login", status_code=303)
+        
+    default_stem = Path(config.SESSION_NAME).stem
+    if session_name == default_stem:
+        request.session["flash_danger"] = "Cannot delete the default Master session account."
+        return RedirectResponse(url="/sessions", status_code=303)
+        
+    try:
+        clients_dict = telegram_client.get_clients_dict()
+        if session_name in clients_dict:
+            client = clients_dict[session_name]
+            if client.is_connected():
+                await client.disconnect()
+            clients_dict.pop(session_name, None)
+            
+        sess_path = Path("sessions") / f"{session_name}.session"
+        if sess_path.exists():
+            sess_path.unlink()
+        journal_path = Path("sessions") / f"{session_name}.session-journal"
+        if journal_path.exists():
+            journal_path.unlink()
+            
+        request.session["flash_success"] = f"Session '{session_name}' successfully deleted."
+    except Exception as e:
+        request.session["flash_danger"] = f"Failed to delete session: {e}"
+        
+    return RedirectResponse(url="/sessions", status_code=303)

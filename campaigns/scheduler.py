@@ -108,21 +108,26 @@ async def start_auto_backup_scheduler():
                 logger.info("Triggering scheduled automatic backup...")
                 from services.backup_service import backup_svc
                 
-                backup_path = await backup_svc.create_backup()
+                backup_paths = await backup_svc.create_backup()
                 
-                report_target = await settings_svc.get_setting("report_target", config.REPORT_TARGET)
-                if report_target:
-                    caption_msg = (
-                        f"🔒 **Auto-Backup Terenkripsi (2 Harian)**\n"
-                        f"• **Waktu**: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
-                        f"• **Berkas**: `{os.path.basename(backup_path)}`"
-                    )
-                    await client.send_file(report_target, backup_path, caption=caption_msg)
-                    logger.info(f"Auto-backup successfully sent to {report_target}")
+                report_target_raw = await settings_svc.get_setting("report_target", config.REPORT_TARGET)
+                if report_target_raw:
+                    from utils import resolve_target_entity
+                    resolved_target = await resolve_target_entity(client, report_target_raw)
+                    for path in backup_paths:
+                        caption_msg = (
+                            f"🔒 **Auto-Backup (2 Harian)**\n"
+                            f"• **Waktu**: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                            f"• **Berkas**: `{os.path.basename(path)}`"
+                        )
+                        await client.send_file(resolved_target, path, caption=caption_msg)
+                        backup_svc.clean_backup_file(path)
+                    logger.info(f"Auto-backup successfully sent to {report_target_raw}")
                 else:
                     logger.warning("Auto-backup skipped: report_target settings is empty.")
+                    for path in backup_paths:
+                        backup_svc.clean_backup_file(path)
                     
-                backup_svc.clean_backup_file(backup_path)
                 await settings_svc.set_setting("last_auto_backup_time", datetime.now().isoformat())
                 
         except asyncio.CancelledError:

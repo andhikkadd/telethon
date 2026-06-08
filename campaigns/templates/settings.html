@@ -48,8 +48,14 @@
 
                 <div class="mb-3">
                     <label for="report_target" class="form-label text-secondary small fw-semibold">Report &amp; Backup Telegram Target</label>
-                    <input type="text" class="form-control form-control-custom" id="report_target" name="report_target" value="{{ settings.report_target }}" placeholder="me or telegram ID" required>
-                    <div class="form-text text-muted small mt-1">Username target atau ID chat Telegram tempat bot mengirimkan file backup dan laporan wave.</div>
+                    <input type="text" class="form-control form-control-custom" id="report_target" name="report_target" value="{{ settings.report_target }}" placeholder="me, ID chat, @username, atau Link Invite Channel Private" required>
+                    <div class="form-text text-muted small mt-1">Username (@username), ID chat, atau Link Invite Channel Private (misal: `https://t.me/+4DirMfRHtfUzNjNl`) tempat bot mengirimkan file backup dan laporan wave.</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="control_group" class="form-label text-secondary small fw-semibold">Control Group Chat Target (Optional)</label>
+                    <input type="text" class="form-control form-control-custom" id="control_group" name="control_group" value="{{ settings.control_group }}" placeholder="@group_username, ID chat, atau kosongkan">
+                    <div class="form-text text-muted small mt-1">Username grup (@username) atau ID chat grup tempat bot menerima perintah admin (seperti `!status` atau `!ping`). Kosongkan jika hanya ingin menerima perintah via Chat Pribadi (PM).</div>
                 </div>
 
                 <div class="mb-4">

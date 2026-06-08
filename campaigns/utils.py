@@ -97,3 +97,64 @@ def format_duration(seconds: float) -> str:
     if hours > 0:
         return f"{hours}h {mins}m {secs}s"
     return f"{mins}m {secs}s"
+
+async def resolve_target_entity(client, target):
+    """
+    Resolves a target (which can be a user ID, username, or an invite link)
+    into a valid Telethon input peer or entity.
+    """
+    if not target:
+        return None
+        
+    # If target is already an integer (e.g. peer ID)
+    if isinstance(target, int):
+        return target
+        
+    target_str = str(target).strip()
+    
+    # If it is a digit or signed digit
+    if target_str.replace("-", "").isdigit():
+        return int(target_str)
+        
+    # Check if target is a Telegram link
+    if "t.me/" in target_str or "telegram.me/" in target_str:
+        # Extract the part after the last slash
+        parts = target_str.split("/")
+        # Find the last non-empty part
+        clean_part = ""
+        for p in reversed(parts):
+            if p.strip():
+                clean_part = p.strip()
+                break
+                
+        # Check if it is an invite link (starts with '+' or was in 'joinchat/')
+        is_invite = False
+        if clean_part.startswith("+"):
+            is_invite = True
+            invite_hash = clean_part[1:]
+        elif "joinchat" in target_str:
+            is_invite = True
+            invite_hash = clean_part
+        else:
+            # Standard username
+            target_str = "@" + clean_part.lstrip("@")
+            
+        if is_invite:
+            from telethon.tl.functions.messages import ImportChatInviteRequest, CheckChatInviteRequest
+            from telethon.errors import UserAlreadyParticipantError
+            try:
+                # Try to join the private channel/group first
+                updates = await client(ImportChatInviteRequest(invite_hash))
+                if hasattr(updates, "chats") and updates.chats:
+                    return updates.chats[0]
+            except UserAlreadyParticipantError:
+                # If already joined, check invite info to get the chat/channel entity
+                invite_info = await client(CheckChatInviteRequest(invite_hash))
+                if hasattr(invite_info, "chat"):
+                    return invite_info.chat
+            except Exception as e:
+                logger.error(f"Failed to join/resolve private chat invite hash {invite_hash}: {e}")
+                raise e
+
+    # Otherwise get normal entity (username or peer ID)
+    return await client.get_entity(target_str)

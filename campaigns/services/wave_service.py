@@ -32,8 +32,6 @@ class WaveService:
                 logger.error("No active promotion templates found. Wave aborted.")
                 # Send emergency error if target is configured
                 return
-                
-            selected_template = random.choice(templates)["text"]
             
             # 3. Get active target groups that are not in cooldown
             now_iso = datetime.now().isoformat()
@@ -65,76 +63,129 @@ class WaveService:
             success_count = 0
             fail_count = 0
             
-            # Get inter-group delay setting
-            delay_sec_raw = await settings_svc.get_setting("delay_between_groups", str(config.DELAY_BETWEEN_GROUPS_SECONDS))
-            try:
-                delay_sec = int(delay_sec_raw)
-            except ValueError:
-                delay_sec = 15
-                
-            client = telegram_client.get_client()
+            # Get inter-group delay setting (min and max seconds)
+            min_delay_sec_raw = await settings_svc.get_setting("delay_between_groups_min", None)
+            max_delay_sec_raw = await settings_svc.get_setting("delay_between_groups_max", None)
             
-            # 5. Delivery Loop
-            for idx, grp in enumerate(groups):
-                # Apply inter-group delay (except for first target)
-                if idx > 0:
-                    await asyncio.sleep(delay_sec)
-                    
-                target = grp["username"]
-                # Convert numeric strings (Telegram peer IDs) back to integers
-                if target.replace("-", "").isdigit():
-                    target = int(target)
-                    
-                grp_id = grp["id"]
-                grp_title = grp["title"] or "No Title"
+            if min_delay_sec_raw is None or max_delay_sec_raw is None:
+                # Fallback to the legacy single delay setting if exists
+                old_delay = await settings_svc.get_setting("delay_between_groups", str(config.DELAY_BETWEEN_GROUPS_SECONDS))
+                min_delay_sec_raw = old_delay
+                max_delay_sec_raw = old_delay
                 
+            try:
+                min_delay_sec = int(min_delay_sec_raw)
+                max_delay_sec = int(max_delay_sec_raw)
+            except ValueError:
+                min_delay_sec = 15
+                max_delay_sec = 30
+                
+            active_clients = await telegram_client.start_all_clients()
+            if not active_clients:
+                logger.error("No active/authorized Telegram accounts found. Wave aborted.")
+                await db.execute(
+                    "UPDATE wave_logs SET finished_at = ?, status = 'failed', success_count = 0, fail_count = 0 WHERE id = ?",
+                    (datetime.now().isoformat(), wave_log_id)
+                )
+                return
+            
+            # Divide groups among active clients
+            random.shuffle(groups)
+            num_clients = len(active_clients)
+            partitioned_groups = [[] for _ in range(num_clients)]
+            for idx, grp in enumerate(groups):
+                partitioned_groups[idx % num_clients].append(grp)
+            
+            async def run_client_worker(client, client_groups, worker_id):
+                nonlocal success_count, fail_count
                 try:
-                    sent_msg = await client.send_message(target, selected_template)
+                    me = await client.get_me()
+                    client_name = f"{me.first_name} (@{me.username or 'NoUsername'})"
+                except Exception:
+                    client_name = f"Bot #{worker_id}"
+                logger.info(f"Worker #{worker_id} ({client_name}) started with {len(client_groups)} groups.")
+                
+                # Shuffled template pool for this worker to ensure even distribution
+                template_pool = []
+                def get_next_template():
+                    nonlocal template_pool
+                    if not template_pool:
+                        template_pool = [t["text"] for t in templates]
+                        random.shuffle(template_pool)
+                    return template_pool.pop()
+                
+                for idx, grp in enumerate(client_groups):
+                    # Apply delay before sending (except first group)
+                    if idx > 0:
+                        current_delay = random.randint(min(min_delay_sec, max_delay_sec), max(min_delay_sec, max_delay_sec))
+                        logger.info(f"Worker #{worker_id} ({client_name}) sleeping for {current_delay}s before next group...")
+                        await asyncio.sleep(current_delay)
+                        
+                    target = grp["username"]
+                    if target.replace("-", "").isdigit():
+                        target = int(target)
+                        
+                    grp_id = grp["id"]
+                    grp_title = grp["title"] or "No Title"
+                    selected_template = get_next_template()
                     
-                    # Verify message visibility post-delivery
-                    is_verified = await group_svc.verify_message_delivery(grp["username"], sent_msg.id)
-                    item_status = "success" if is_verified else "unverified"
-                    grp_status = "ACTIVE" if is_verified else "UNVERIFIED"
-                    
-                    # Update database group health record
-                    await db.execute(
-                        """
-                        UPDATE groups 
-                        SET status = ?, last_send_status = ?, last_success_at = ?, 
-                            fail_streak = 0, last_error = NULL, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (grp_status, item_status, datetime.now().isoformat(), datetime.now().isoformat(), grp_id)
-                    )
-                    
-                    # Insert wave log details
-                    await db.execute(
-                        """
-                        INSERT INTO wave_log_items (wave_log_id, group_id, group_title, status, error_message, message_id)
-                        VALUES (?, ?, ?, ?, NULL, ?)
-                        """,
-                        (wave_log_id, grp_id, grp_title, item_status, sent_msg.id)
-                    )
-                    
-                    success_count += 1
-                    logger.info(f"Message successfully sent to {grp_title} ({grp['username']}) [Status: {item_status}]")
-                    
-                except Exception as e:
-                    # Update DB health properties based on exception mapping
-                    await group_svc.handle_delivery_error(grp_id, e)
-                    
-                    # Log failure to wave log items
-                    await db.execute(
-                        """
-                        INSERT INTO wave_log_items (wave_log_id, group_id, group_title, status, error_message, message_id)
-                        VALUES (?, ?, ?, 'failed', ?, NULL)
-                        """,
-                        (wave_log_id, grp_id, grp_title, str(e))
-                    )
-                    
-                    fail_count += 1
-                    logger.warning(f"Failed to deliver message to {grp_title} ({grp['username']}): {e}")
-                    
+                    try:
+                        logger.info(f"Worker #{worker_id} ({client_name}) sending message to {grp_title} ({grp['username']})...")
+                        sent_msg = await client.send_message(target, selected_template)
+                        
+                        # Verify message visibility post-delivery
+                        is_verified = await group_svc.verify_message_delivery(grp["username"], sent_msg.id, client=client)
+                        item_status = "success" if is_verified else "unverified"
+                        grp_status = "ACTIVE" if is_verified else "UNVERIFIED"
+                        
+                        # Update database group health record
+                        await db.execute(
+                            """
+                            UPDATE groups 
+                            SET status = ?, last_send_status = ?, last_success_at = ?, 
+                                fail_streak = 0, last_error = NULL, updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (grp_status, item_status, datetime.now().isoformat(), datetime.now().isoformat(), grp_id)
+                        )
+                        
+                        # Insert wave log details
+                        await db.execute(
+                            """
+                            INSERT INTO wave_log_items (wave_log_id, group_id, group_title, status, error_message, message_id)
+                            VALUES (?, ?, ?, ?, NULL, ?)
+                            """,
+                            (wave_log_id, grp_id, grp_title, item_status, sent_msg.id)
+                        )
+                        
+                        success_count += 1
+                        logger.info(f"Worker #{worker_id} ({client_name}): Message successfully sent to {grp_title} [Status: {item_status}]")
+                        
+                    except Exception as e:
+                        # Update DB health properties based on exception mapping
+                        await group_svc.handle_delivery_error(grp_id, e)
+                        
+                        # Log failure to wave log items
+                        await db.execute(
+                            """
+                            INSERT INTO wave_log_items (wave_log_id, group_id, group_title, status, error_message, message_id)
+                            VALUES (?, ?, ?, 'failed', ?, NULL)
+                            """,
+                            (wave_log_id, grp_id, grp_title, str(e))
+                        )
+                        
+                        fail_count += 1
+                        logger.warning(f"Worker #{worker_id} ({client_name}) failed sending to {grp_title}: {e}")
+            
+            # Run all workers concurrently
+            worker_tasks = []
+            for i, client in enumerate(active_clients):
+                if partitioned_groups[i]:
+                    worker_tasks.append(run_client_worker(client, partitioned_groups[i], i + 1))
+            
+            if worker_tasks:
+                await asyncio.gather(*worker_tasks)
+                
             # 6. Complete Wave Log
             finished_str = datetime.now().isoformat()
             await db.execute(
@@ -147,34 +198,30 @@ class WaveService:
             )
             
             logger.info(f"Wave execution finished: {success_count} success, {fail_count} failed.")
-            
-            # Update live stats
             state.last_run_time = datetime.now()
             
             # 7. Dispatch Report if requested
             send_report_val = await settings_svc.get_setting("send_report", "1")
             if send_report_val == "1":
-                report_target = await settings_svc.get_setting("report_target", config.REPORT_TARGET)
-                if report_target:
-                    # Cast to int if numeric string (e.g. numeric ID)
-                    if isinstance(report_target, str):
-                        cleaned_tgt = report_target.strip()
-                        if cleaned_tgt.replace("-", "").isdigit():
-                            report_target = int(cleaned_tgt)
-                            
-                    duration_sec = (datetime.fromisoformat(finished_str) - datetime.fromisoformat(now_str)).total_seconds()
-                    report_msg = (
-                        f"📊 **Laporan Pengiriman Wave #{wave_log_id}**\n"
-                        f"• **Pemicu**: `{triggered_by}`\n"
-                        f"• **Waktu Mulai**: `{now_str}`\n"
-                        f"• **Durasi**: `{duration_sec:.1f} detik`\n"
-                        f"• **Hasil**: `{success_count} Sukses` / `{fail_count} Gagal`"
-                    )
+                report_target_raw = await settings_svc.get_setting("report_target", config.REPORT_TARGET)
+                if report_target_raw:
+                    from utils import resolve_target_entity
                     try:
-                        await client.send_message(report_target, report_msg)
-                        logger.info(f"Wave delivery report sent successfully to {report_target}.")
+                        rep_client = active_clients[0]
+                        resolved_target = await resolve_target_entity(rep_client, report_target_raw)
+                        duration_sec = (datetime.fromisoformat(finished_str) - datetime.fromisoformat(now_str)).total_seconds()
+                        report_msg = (
+                            f"📊 **Laporan Pengiriman Wave #{wave_log_id}**\n"
+                            f"• **Pemicu**: `{triggered_by}`\n"
+                            f"• **Waktu Mulai**: `{now_str}`\n"
+                            f"• **Durasi**: `{duration_sec:.1f} detik`\n"
+                            f"• **Hasil**: `{success_count} Sukses` / `{fail_count} Gagal`\n"
+                            f"• **Jumlah Akun Aktif**: `{len(active_clients)}`"
+                        )
+                        await rep_client.send_message(resolved_target, report_msg)
+                        logger.info(f"Wave delivery report sent successfully to {report_target_raw}.")
                     except Exception as rep_err:
-                        logger.error(f"Failed to send wave report to {report_target}: {rep_err}")
+                        logger.error(f"Failed to send wave report to {report_target_raw}: {rep_err}")
                         
         finally:
             # Release lock

@@ -3,8 +3,14 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (local module-specific .env first, then root .env fallback)
+local_env = Path(__file__).parent / ".env"
+if local_env.exists():
+    load_dotenv(local_env)
+
+root_env = Path(__file__).parent.parent / ".env"
+if root_env.exists():
+    load_dotenv(root_env)
 
 # Pre-initialize logging config
 logging.basicConfig(

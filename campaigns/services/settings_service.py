@@ -33,7 +33,8 @@ class SettingsService:
         delay_between_groups: int,
         send_report: bool,
         report_target: str,
-        run_wave_on_start: bool
+        run_wave_on_start: bool,
+        control_group: str = ""
     ):
         # Update SQLite values
         await SettingsService.set_setting("min_delay", str(min_delay))
@@ -42,6 +43,7 @@ class SettingsService:
         await SettingsService.set_setting("send_report", "1" if send_report else "0")
         await SettingsService.set_setting("report_target", report_target)
         await SettingsService.set_setting("run_wave_on_start", "1" if run_wave_on_start else "0")
+        await SettingsService.set_setting("control_group", control_group.strip())
         
         # Update global memory state
         state.min_delay = min_delay

@@ -39,9 +39,9 @@ assistant_host = asst_env.get("WEB_HOST") or "127.0.0.1"
 assistant_port = asst_env.get("WEB_PORT") or "8001"
 ASSISTANT_URL = os.getenv("ASSISTANT_URL", f"http://{assistant_host}:{assistant_port}").strip()
 
-# Resolve unified credentials from campaigns or assistant
-PORTAL_ADMIN_USERNAME = (camp_env.get("WEB_ADMIN_USERNAME") or asst_env.get("WEB_ADMIN_USERNAME") or "admin").strip()
-PORTAL_ADMIN_PASSWORD = (camp_env.get("WEB_ADMIN_PASSWORD") or asst_env.get("WEB_ADMIN_PASSWORD") or "priahitam").strip()
+# Resolve unified credentials from root .env or fall back to campaigns or assistant
+PORTAL_ADMIN_USERNAME = (os.getenv("WEB_ADMIN_USERNAME") or camp_env.get("WEB_ADMIN_USERNAME") or asst_env.get("WEB_ADMIN_USERNAME") or "admin").strip()
+PORTAL_ADMIN_PASSWORD = (os.getenv("WEB_ADMIN_PASSWORD") or camp_env.get("WEB_ADMIN_PASSWORD") or asst_env.get("WEB_ADMIN_PASSWORD") or "priahitam").strip()
 
 SESSION_SECRET = os.getenv("PORTAL_SESSION_SECRET", "auto-teleflow-portal-secret-key-98721").strip()
 

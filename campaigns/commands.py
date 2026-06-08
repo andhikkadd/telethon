@@ -36,16 +36,24 @@ def is_authorized(sender_id: int, sender_username: str) -> bool:
                 
     return False
 
-async def register_handlers():
-    """Register command message event listener on the Telethon client."""
-    client = telegram_client.get_client()
+async def register_handlers(clients: list = None):
+    """Register command message event listener on all active Telethon clients."""
+    if clients is None:
+        clients = telegram_client.get_active_clients()
 
-    @client.on(events.NewMessage(pattern=r'^!'))
     async def command_router(event):
         sender = await event.get_sender()
         sender_id = event.sender_id
         sender_username = sender.username if sender else None
         
+        # Prevent responding to self
+        try:
+            me = await event.client.get_me()
+            if me and sender_id == me.id:
+                return
+        except Exception:
+            me = None
+
         # Verify authorization
         authorized = is_authorized(sender_id, sender_username)
         
@@ -62,11 +70,67 @@ async def register_handlers():
             # Silently ignore to prevent disclosure of bot's active existence
             return
 
+        # Restrict command execution to Private Chats (PM) or the configured Control Group Target
+        from services.settings_service import settings_svc
+        control_group_raw = await settings_svc.get_setting("control_group", "")
+        
+        is_allowed_chat = False
+        if event.is_private:
+            is_allowed_chat = True
+        else:
+            if control_group_raw:
+                clean_control = control_group_raw.strip()
+                chat_id_str = str(event.chat_id)
+                
+                # Check for direct ID match (e.g. -100123456789)
+                if clean_control == chat_id_str:
+                    is_allowed_chat = True
+                else:
+                    try:
+                        chat = await event.get_chat()
+                        chat_username = getattr(chat, "username", None)
+                        if chat_username and clean_control.lstrip("@").lower() == chat_username.lower():
+                            is_allowed_chat = True
+                    except Exception:
+                        pass
+            else:
+                # If control_group is not set, allow commands anywhere for backward compatibility
+                is_allowed_chat = True
+                
+        if not is_allowed_chat:
+            # Silently ignore to avoid leakage or spam in public groups
+            return
+
         # Parse command
         text = event.text
         parts = text.split(maxsplit=1)
         cmd = parts[0].lower()
         arg_str = parts[1].strip() if len(parts) > 1 else ""
+
+        # Check for username targeting (e.g. !ping @bot_username)
+        target_username = None
+        if arg_str.startswith("@"):
+            arg_parts = arg_str.split(maxsplit=1)
+            target_username = arg_parts[0].lower().lstrip("@")
+            arg_str = arg_parts[1].strip() if len(arg_parts) > 1 else ""
+            
+        if target_username and me:
+            my_username = (me.username or "").lower()
+            if target_username != my_username:
+                # Command targeted at another bot, ignore
+                return
+
+        # Monkey-patch event.reply to automatically prepend the bot label
+        if me:
+            bot_label = f"🤖 **{me.first_name}**"
+            if me.username:
+                bot_label += f" (@{me.username})"
+            
+            original_reply = event.reply
+            async def custom_reply(message, *args, **kwargs):
+                custom_message = f"{bot_label}\n{message}"
+                return await original_reply(custom_message, *args, **kwargs)
+            event.reply = custom_reply
 
         logger.info(f"Admin command executed: {cmd} {arg_str}")
         
@@ -87,6 +151,8 @@ async def register_handlers():
                 await handle_wave(event)
             elif cmd == "!setdelay":
                 await handle_setdelay(event, arg_str)
+            elif cmd == "!setgroupdelay":
+                await handle_setgroupdelay(event, arg_str)
             elif cmd == "!groups":
                 await handle_groups(event)
             elif cmd == "!addgroup":
@@ -141,6 +207,9 @@ async def register_handlers():
             sanitized_err = sanitize_logs(str(e))
             await event.reply(f"❌ Terjadi error saat mengeksekusi `{cmd}`: {type(e).__name__}: {sanitized_err}")
 
+    for client in clients:
+        client.add_event_handler(command_router, events.NewMessage(pattern=r'^!'))
+
 # Command Handler Implementations
 
 async def handle_help(event):
@@ -157,6 +226,7 @@ async def handle_help(event):
         "**Manajemen Wave:**\n"
         "• `!wave` - Jalankan 1 wave promo manual sekarang.\n"
         "• `!setdelay <min> <max>` - Atur batas delay acak (menit).\n"
+        "• `!setgroupdelay <min> <max>` - Atur batas delay acak antar grup (detik).\n"
         "• `!logs` - Ringkasan logs pengiriman wave terakhir.\n\n"
         "**Manajemen & Kesehatan Grup:**\n"
         "• `!groups` - Daftar grup target promo.\n"
@@ -247,6 +317,50 @@ async def handle_setdelay(event, arg_str):
     state.max_delay = val_max
     
     await event.reply(f"✅ **Delay berhasil diubah**:\n• Min: `{val_min} menit`\n• Max: `{val_max} menit`\nPerubahan diterapkan pada siklus berikutnya.")
+
+async def handle_setgroupdelay(event, arg_str):
+    parts = arg_str.split()
+    if len(parts) < 2:
+        current_min = await settings_svc.get_setting("delay_between_groups_min", None)
+        current_max = await settings_svc.get_setting("delay_between_groups_max", None)
+        
+        if current_min is None or current_max is None:
+            legacy_val = await settings_svc.get_setting("delay_between_groups", str(config.DELAY_BETWEEN_GROUPS_SECONDS))
+            current_min = legacy_val
+            current_max = legacy_val
+            
+        await event.reply(
+            f"ℹ️ **Delay Antar Grup Saat Ini**:\n"
+            f"• Min: `{current_min} detik`\n"
+            f"• Max: `{current_max} detik`\n"
+            f"Gunakan: `!setgroupdelay <min_detik> <max_detik>` untuk mengubah.\n"
+            f"Contoh: `!setgroupdelay 15 45`"
+        )
+        return
+        
+    try:
+        val_min = int(parts[0])
+        val_max = int(parts[1])
+    except ValueError:
+        await event.reply("⚠️ Nilai delay harus berupa angka integer (detik).")
+        return
+
+    if val_min < 0 or val_max < 0:
+        await event.reply("⚠️ Nilai delay tidak boleh kurang dari 0 detik.")
+        return
+
+    if val_min > val_max:
+        val_min, val_max = val_max, val_min
+
+    # Save to DB settings
+    await settings_svc.set_setting("delay_between_groups_min", str(val_min))
+    await settings_svc.set_setting("delay_between_groups_max", str(val_max))
+    
+    await event.reply(
+        f"✅ **Delay antar grup berhasil diubah**:\n"
+        f"• Min: `{val_min} detik`\n"
+        f"• Max: `{val_max} detik`"
+    )
 
 async def handle_groups(event):
     groups = await group_svc.get_all_groups()
@@ -477,24 +591,26 @@ async def handle_test(event, arg_str):
 async def handle_backup(event):
     await event.reply("📦 **Memulai proses backup data...**")
     try:
-        backup_file_path = await backup_svc.create_backup()
-        basename = os.path.basename(backup_file_path)
-        is_encrypted = backup_file_path.endswith(".gpg")
+        backup_paths = await backup_svc.create_backup()
+        client = event.client
+        from utils import resolve_target_entity
+        resolved_target = await resolve_target_entity(client, config.BACKUP_TARGET)
         
-        caption = (
-            f"📦 **Backup File Userbot Promo**\n"
-            f"• **File**: `{basename}`\n"
-            f"• **Enkripsi**: {'🔒 AES256 GPG' if is_encrypted else '⚠️ ZIP Unencrypted'}\n"
-            f"• **Waktu**: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
-            f"• Jangan berikan file backup ini ke siapapun!"
-        )
-        
-        client = telegram_client.get_client()
-        await client.send_file(config.BACKUP_TARGET, backup_file_path, caption=caption)
-        
-        # Clean local file
-        backup_svc.clean_backup_file(backup_file_path)
-        await event.reply(f"✅ **Backup sukses terkirim** ke target `{config.BACKUP_TARGET}`.")
+        for path in backup_paths:
+            basename = os.path.basename(path)
+            is_encrypted = path.endswith(".gpg")
+            caption = (
+                f"📦 **Backup File Userbot Promo**\n"
+                f"• **File**: `{basename}`\n"
+                f"• **Enkripsi**: {'🔒 AES256 GPG' if is_encrypted else '⚠️ ZIP Unencrypted'}\n"
+                f"• **Waktu**: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+                f"• Jangan berikan file backup ini ke siapapun!"
+            )
+            await client.send_file(resolved_target, path, caption=caption)
+            # Clean local file
+            backup_svc.clean_backup_file(path)
+            
+        await event.reply(f"✅ **Backup sukses terkirim** ({len(backup_paths)} berkas) ke target `{config.BACKUP_TARGET}`.")
     except Exception as e:
         sanitized_err = sanitize_logs(str(e))
         await event.reply(
@@ -546,7 +662,15 @@ async def handle_logs(event, arg_str):
 async def handle_reload(event):
     await event.reply("🔄 **Memuat ulang settings...**")
     from dotenv import load_dotenv
-    load_dotenv(override=True)
+    from pathlib import Path
+    
+    local_env = Path(__file__).parent / ".env"
+    if local_env.exists():
+        load_dotenv(local_env, override=True)
+        
+    root_env = Path(__file__).parent.parent / ".env"
+    if root_env.exists():
+        load_dotenv(root_env, override=True)
     
     try:
         paused_setting = await db.fetchone("SELECT value FROM settings WHERE key = 'paused'")

@@ -20,168 +20,178 @@ class BackupService:
             return False
 
     @staticmethod
-    async def create_backup() -> str:
+    async def create_backup() -> list[str]:
         """
-        Creates a backup archive.
-        Returns the absolute path to the generated backup file (either GPG or ZIP).
+        Creates backup archives for campaigns, assistant modules, and root system files separately.
+        Returns a list of absolute paths to the generated backup files.
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        temp_zip_path = Path(f"backups/temp_backup_{timestamp}.zip")
         
-        # Define files to package
-        source_files = [
-            "main.py", "config.py", "database.py", "telegram_client.py",
-            "commands.py", "scheduler.py", "web_panel.py",
-            "server_status.py", "utils.py", "requirements.txt", "README.md",
-            "DEPLOYMENT.md", "DEPLOY_PTERODACTYL.md", "GITHUB_WORKFLOW.md",
-            "SECURITY.md", "CHANGELOG.md", ".env.example"
-        ]
+        # Define base directories relative to this file
+        service_file_path = Path(__file__).resolve()
+        campaigns_dir = service_file_path.parent.parent
+        project_root = campaigns_dir.parent
+        assistant_dir = project_root / "assistant"
         
-        # Include services files
-        services_dir = Path("services")
-        if services_dir.is_dir():
-            for svc_file in services_dir.glob("*.py"):
-                source_files.append(str(svc_file))
-                
-        logger.info("Starting backup archiving process...")
+        backups_dir = campaigns_dir / "backups"
+        backups_dir.mkdir(parents=True, exist_ok=True)
         
-        # Ensure backups folder exists
-        Path("backups").mkdir(parents=True, exist_ok=True)
+        backup_files = []
         
+        # 1. CREATE CAMPAIGNS BACKUP
+        camp_zip_path = backups_dir / f"backup_campaigns_{timestamp}.zip"
         try:
-            with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                # Add source files
-                for f_name in source_files:
-                    if os.path.exists(f_name):
-                        zipf.write(f_name)
+            with zipfile.ZipFile(camp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # Add campaigns source files
+                camp_files = [
+                    "main.py", "config.py", "database.py", "telegram_client.py",
+                    "commands.py", "scheduler.py", "web_panel.py",
+                    "server_status.py", "utils.py", "requirements.txt", "README.md"
+                ]
+                for f_name in camp_files:
+                    f_path = campaigns_dir / f_name
+                    if f_path.exists():
+                        zipf.write(str(f_path), arcname=f_name)
+                
+                # Add campaigns services
+                services_dir = campaigns_dir / "services"
+                if services_dir.is_dir():
+                    for svc_file in services_dir.glob("*.py"):
+                        zipf.write(str(svc_file), arcname=os.path.join("services", svc_file.name))
                         
-                # Add database
-                if os.path.exists(config.DATABASE_PATH):
-                    zipf.write(config.DATABASE_PATH)
-                    
-                # Add sessions folder
-                sess_dir = Path("sessions")
-                if sess_dir.is_dir():
-                    for session_file in sess_dir.glob("*.session"):
-                        zipf.write(str(session_file))
-                    for journal_file in sess_dir.glob("*.session-journal"):
-                        zipf.write(str(journal_file))
-
-                # Add docs folder
-                docs_dir = Path("docs")
-                if docs_dir.is_dir():
-                    for doc_file in docs_dir.rglob("*"):
-                        if doc_file.is_file():
-                            zipf.write(str(doc_file))
-
-                # Add templates folder
-                templates_dir = Path("templates")
+                # Add templates
+                templates_dir = campaigns_dir / "templates"
                 if templates_dir.is_dir():
                     for t_file in templates_dir.rglob("*"):
                         if t_file.is_file():
-                            zipf.write(str(t_file))
-
-                # Add static folder
-                static_dir = Path("static")
-                if static_dir.is_dir():
-                    for s_file in static_dir.rglob("*"):
-                        if s_file.is_file():
-                            zipf.write(str(s_file))
-
-                # Include .env ONLY if explicitly configured, but sanitize out BACKUP_PASSWORD & other secrets
-                if config.BACKUP_INCLUDE_ENV and os.path.exists(".env"):
-                    temp_env_path = Path("backups/temp_env")
-                    try:
-                        with open(".env", "r", encoding="utf-8") as f_in, open(temp_env_path, "w", encoding="utf-8") as f_out:
-                            for line in f_in:
-                                stripped = line.strip()
-                                # Redact highly critical secrets before packing
-                                if stripped.startswith("BACKUP_PASSWORD="):
-                                    f_out.write("BACKUP_PASSWORD=***REMOVED_FOR_SECURITY***\n")
-                                elif stripped.startswith("WEB_ADMIN_PASSWORD="):
-                                    f_out.write("WEB_ADMIN_PASSWORD=***REMOVED_FOR_SECURITY***\n")
-                                elif stripped.startswith("WEB_SESSION_SECRET="):
-                                    f_out.write("WEB_SESSION_SECRET=***REMOVED_FOR_SECURITY***\n")
-                                elif stripped.startswith("API_HASH="):
-                                    f_out.write("API_HASH=***REMOVED_FOR_SECURITY***\n")
-                                else:
-                                    f_out.write(line)
-                        zipf.write(temp_env_path, arcname=".env")
-                        logger.info("Sanitized .env file included in backup.")
-                    finally:
-                        if temp_env_path.exists():
-                            temp_env_path.unlink()
+                            zipf.write(str(t_file), arcname=os.path.join("templates", str(t_file.relative_to(templates_dir))))
+                            
+                # Add database
+                db_path = project_root / "data" / "bot.db"
+                if db_path.exists():
+                    zipf.write(str(db_path), arcname="data/bot.db")
+                elif os.path.exists(config.DATABASE_PATH):
+                    zipf.write(config.DATABASE_PATH, arcname="data/bot.db")
                     
-            logger.info(f"Temporary zip archive created: {temp_zip_path}")
-            
+                # Add sessions
+                sess_dir = campaigns_dir / "sessions"
+                if sess_dir.is_dir():
+                    for session_file in sess_dir.glob("*.session"):
+                        zipf.write(str(session_file), arcname=os.path.join("sessions", session_file.name))
+                    for journal_file in sess_dir.glob("*.session-journal"):
+                        zipf.write(str(journal_file), arcname=os.path.join("sessions", journal_file.name))
+                        
+                # Add campaigns env
+                camp_env = campaigns_dir / ".env"
+                if camp_env.exists():
+                    zipf.write(str(camp_env), arcname=".env")
+                    
+            logger.info(f"Campaigns backup created: {camp_zip_path}")
+            backup_files.append(str(camp_zip_path.resolve()))
         except Exception as e:
-            if temp_zip_path.exists():
-                temp_zip_path.unlink()
-            raise RuntimeError(f"Failed to create ZIP archive: {e}")
-
-        # Check for GPG encryption
+            logger.error(f"Failed to create campaigns backup: {e}", exc_info=True)
+            
+        # 2. CREATE ASSISTANT BACKUP
+        asst_zip_path = backups_dir / f"backup_assistant_{timestamp}.zip"
+        try:
+            if assistant_dir.is_dir():
+                with zipfile.ZipFile(asst_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    # Add assistant source files
+                    for f in assistant_dir.glob("*.py"):
+                        zipf.write(str(f), arcname=os.path.join("assistant", f.name))
+                    
+                    # Add assistant services
+                    asst_svc_dir = assistant_dir / "services"
+                    if asst_svc_dir.is_dir():
+                        for f in asst_svc_dir.glob("*.py"):
+                            zipf.write(str(f), arcname=os.path.join("assistant", "services", f.name))
+                            
+                    # Add assistant templates
+                    asst_temp_dir = assistant_dir / "templates"
+                    if asst_temp_dir.is_dir():
+                        for f in asst_temp_dir.rglob("*"):
+                            if f.is_file():
+                                zipf.write(str(f), arcname=os.path.join("assistant", "templates", str(f.relative_to(asst_temp_dir))))
+                                
+                    # Add assistant env
+                    asst_env = assistant_dir / ".env"
+                    if asst_env.exists():
+                        zipf.write(str(asst_env), arcname="assistant/.env")
+                        
+                    # Add database
+                    db_path = project_root / "data" / "bot.db"
+                    if db_path.exists():
+                        zipf.write(str(db_path), arcname="data/bot.db")
+                        
+                logger.info(f"Assistant backup created: {asst_zip_path}")
+                backup_files.append(str(asst_zip_path.resolve()))
+        except Exception as e:
+            logger.error(f"Failed to create assistant backup: {e}", exc_info=True)
+            
+        # 3. CREATE ROOT BACKUP (portal, runner, global .env)
+        root_zip_path = backups_dir / f"backup_system_root_{timestamp}.zip"
+        try:
+            with zipfile.ZipFile(root_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                root_files = ["portal.py", "runner.py", ".env", "requirements.txt"]
+                for f_name in root_files:
+                    path = project_root / f_name
+                    if path.exists():
+                        zipf.write(str(path), arcname=f_name)
+            logger.info(f"System Root backup created: {root_zip_path}")
+            backup_files.append(str(root_zip_path.resolve()))
+        except Exception as e:
+            logger.error(f"Failed to create system root backup: {e}", exc_info=True)
+            
+        # Encrypt with GPG if available and allowed
         gpg_ok = BackupService.is_gpg_available()
         from utils import sanitize_logs
         
-        if gpg_ok:
-            if not config.BACKUP_PASSWORD:
-                if temp_zip_path.exists():
-                    temp_zip_path.unlink()
-                raise ValueError("GPG is available but BACKUP_PASSWORD is not set in .env")
-
-            gpg_output_path = Path(f"backups/backup_{timestamp}.zip.gpg")
-            logger.info("GPG is available. Encrypting archive with AES256...")
-            
-            try:
-                process = subprocess.Popen(
-                    [
-                        "gpg", "--symmetric", "--batch", "--yes",
-                        "--passphrase-fd", "0", "--cipher-algo", "AES256",
-                        "-o", str(gpg_output_path), str(temp_zip_path)
-                    ],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
+        final_files = []
+        for zip_p in backup_files:
+            zip_path = Path(zip_p)
+            if gpg_ok:
+                if not config.BACKUP_PASSWORD:
+                    if zip_path.exists():
+                        zip_path.unlink()
+                    raise ValueError("GPG is available but BACKUP_PASSWORD is not set in .env")
                 
-                # Send password via stdin safely
-                stdout, stderr = process.communicate(input=config.BACKUP_PASSWORD)
-                
-                if process.returncode != 0:
-                    sanitized_err = sanitize_logs(stderr)
-                    raise RuntimeError(f"GPG encryption failed: {sanitized_err}")
+                gpg_path = zip_path.with_suffix(zip_path.suffix + ".gpg")
+                try:
+                    process = subprocess.Popen(
+                        [
+                            "gpg", "--symmetric", "--batch", "--yes",
+                            "--passphrase-fd", "0", "--cipher-algo", "AES256",
+                            "-o", str(gpg_path), str(zip_path)
+                        ],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True
+                    )
+                    stdout, stderr = process.communicate(input=config.BACKUP_PASSWORD)
+                    if process.returncode != 0:
+                        raise RuntimeError(f"GPG encryption failed: {sanitize_logs(stderr)}")
                     
-                logger.info(f"Archive encrypted successfully: {gpg_output_path}")
-                
-                # Clean up unencrypted temporary zip
-                if temp_zip_path.exists():
-                    temp_zip_path.unlink()
-                    
-                return str(gpg_output_path.resolve())
-                
-            except Exception as e:
-                if gpg_output_path.exists():
-                    gpg_output_path.unlink()
-                if temp_zip_path.exists():
-                    temp_zip_path.unlink()
-                raise RuntimeError(f"GPG Encryption process error: {sanitize_logs(str(e))}")
-                
-        else:
-            # Fallback if GPG is not available
-            logger.warning("GPG is NOT available on this system.")
-            if config.ALLOW_UNENCRYPTED_BACKUP:
-                fallback_zip_path = Path(f"backups/backup_{timestamp}.zip")
-                shutil.move(str(temp_zip_path), str(fallback_zip_path))
-                logger.warning(f"Unencrypted backup allowed. Saved as: {fallback_zip_path}")
-                return str(fallback_zip_path.resolve())
+                    if zip_path.exists():
+                        zip_path.unlink()
+                    final_files.append(str(gpg_path.resolve()))
+                except Exception as e:
+                    if gpg_path.exists():
+                        gpg_path.unlink()
+                    if zip_path.exists():
+                        zip_path.unlink()
+                    raise RuntimeError(f"GPG Encryption error: {sanitize_logs(str(e))}")
             else:
-                if temp_zip_path.exists():
-                    temp_zip_path.unlink()
-                raise RuntimeError(
-                    "GPG is not available and ALLOW_UNENCRYPTED_BACKUP=false. "
-                    "Secure backup cannot be generated."
-                )
+                if config.ALLOW_UNENCRYPTED_BACKUP:
+                    final_files.append(str(zip_path.resolve()))
+                else:
+                    if zip_path.exists():
+                        zip_path.unlink()
+                    raise RuntimeError(
+                        "GPG is not available and ALLOW_UNENCRYPTED_BACKUP=false. "
+                        "Secure backup cannot be generated."
+                    )
+        return final_files
 
     @staticmethod
     def clean_backup_file(file_path: str):
