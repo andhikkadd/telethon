@@ -89,6 +89,16 @@ class WaveService:
                 )
                 return
             
+            # Gather sender IDs for our active client accounts
+            my_user_ids = []
+            for c in active_clients:
+                try:
+                    me_obj = await c.get_me()
+                    if me_obj:
+                        my_user_ids.append(me_obj.id)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch user ID for account during startup: {e}")
+            
             # Divide groups among active clients
             random.shuffle(groups)
             num_clients = len(active_clients)
@@ -130,6 +140,44 @@ class WaveService:
                     selected_template = get_next_template()
                     
                     try:
+                        # Ghost Auditing / Smart Deduplication check
+                        ghost_auditing_enabled = await settings_svc.get_setting("ghost_auditing_enabled", "0")
+                        if ghost_auditing_enabled == "1":
+                            try:
+                                audit_limit = int(await settings_svc.get_setting("ghost_auditing_limit", "10"))
+                                audit_action = await settings_svc.get_setting("ghost_auditing_action", "skip")
+                                
+                                recent_messages = await client.get_messages(target, limit=audit_limit)
+                                our_msg = None
+                                for msg in recent_messages:
+                                    if msg.sender_id in my_user_ids:
+                                        our_msg = msg
+                                        break
+                                
+                                if our_msg:
+                                    if audit_action == "skip":
+                                        logger.info(f"Ghost Auditing: Previous promo is still visible in the last {audit_limit} messages of {grp_title}. Skipping.")
+                                        await db.execute(
+                                            """
+                                            INSERT INTO wave_log_items (wave_log_id, group_id, group_title, status, error_message, message_id)
+                                            VALUES (?, ?, ?, 'skipped', 'Ghost Auditing: Previous promo still visible', NULL)
+                                            """,
+                                            (wave_log_id, grp_id, grp_title)
+                                        )
+                                        await db.execute(
+                                            "UPDATE groups SET last_send_status = 'skipped', updated_at = ? WHERE id = ?",
+                                            (datetime.now().isoformat(), grp_id)
+                                        )
+                                        continue
+                                    elif audit_action == "delete_and_repost":
+                                        logger.info(f"Ghost Auditing: Deleting previous promo message {our_msg.id} in {grp_title} before reposting.")
+                                        try:
+                                            await client.delete_messages(target, [our_msg.id])
+                                        except Exception as del_err:
+                                            logger.warning(f"Failed to delete previous message {our_msg.id}: {del_err}")
+                            except Exception as audit_err:
+                                logger.error(f"Error executing ghost auditing on {grp_title}: {audit_err}")
+
                         logger.info(f"Worker #{worker_id} ({client_name}) sending message to {grp_title} ({grp['username']})...")
                         sent_msg = await client.send_message(target, selected_template)
                         

@@ -55,7 +55,35 @@
                 <div class="mb-3">
                     <label for="control_group" class="form-label text-secondary small fw-semibold">Control Group Chat Target (Optional)</label>
                     <input type="text" class="form-control form-control-custom" id="control_group" name="control_group" value="{{ settings.control_group }}" placeholder="@group_username, ID chat, atau kosongkan">
-                    <div class="form-text text-muted small mt-1">Username grup (@username) atau ID chat grup tempat bot menerima perintah admin (seperti `!status` atau `!ping`). Kosongkan jika hanya ingin menerima perintah via Chat Pribadi (PM).</div>
+                    <div class="form-text text-muted small mt-1">Username grup (@username) atau ID chat grup tempat bot menerima perintah admin (seperti `!status` or `!ping`). Kosongkan jika hanya ingin menerima perintah via Chat Pribadi (PM).</div>
+                </div>
+
+                <hr class="border-secondary my-4">
+
+                <h6 class="fw-bold text-secondary mb-3"><i class="bi bi-eye-slash text-primary me-2"></i>Ghost Auditing &amp; Smart Deduplication</h6>
+
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="ghost_auditing_enabled" name="ghost_auditing_enabled" {% if settings.ghost_auditing_enabled == '1' %}checked{% endif %}>
+                        <label class="form-check-label text-secondary small fw-semibold" for="ghost_auditing_enabled">Enable Smart Deduplication (Ghost Auditing)</label>
+                    </div>
+                    <div class="form-text text-muted small mt-1">Audit recent messages in target groups. If a promo from any of our userbots is still visible, the system will skip or delete-and-repost instead of spamming.</div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="ghost_auditing_limit" class="form-label text-secondary small fw-semibold">Audit History Limit (Messages)</label>
+                        <input type="number" class="form-control form-control-custom" id="ghost_auditing_limit" name="ghost_auditing_limit" value="{{ settings.ghost_auditing_limit or '10' }}" min="1" max="50">
+                        <div class="form-text text-muted small mt-1">Number of recent messages to inspect (Saran: 5-15).</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="ghost_auditing_action" class="form-label text-secondary small fw-semibold">Auditing Action</label>
+                        <select class="form-select form-select-custom" id="ghost_auditing_action" name="ghost_auditing_action" style="background-color: #1a1a1a; color: #fff; border: 1px solid rgba(255, 255, 255, 0.1);">
+                            <option value="skip" {% if settings.ghost_auditing_action == 'skip' %}selected{% endif %}>Skip Sending (Keep Old Promo)</option>
+                            <option value="delete_and_repost" {% if settings.ghost_auditing_action == 'delete_and_repost' %}selected{% endif %}>Delete Old &amp; Repost</option>
+                        </select>
+                        <div class="form-text text-muted small mt-1">Action to take if our promo is still visible.</div>
+                    </div>
                 </div>
 
                 <div class="mb-4">

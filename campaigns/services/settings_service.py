@@ -34,7 +34,10 @@ class SettingsService:
         send_report: bool,
         report_target: str,
         run_wave_on_start: bool,
-        control_group: str = ""
+        control_group: str = "",
+        ghost_auditing_enabled: bool = False,
+        ghost_auditing_limit: int = 10,
+        ghost_auditing_action: str = "skip"
     ):
         # Update SQLite values
         await SettingsService.set_setting("min_delay", str(min_delay))
@@ -44,6 +47,9 @@ class SettingsService:
         await SettingsService.set_setting("report_target", report_target)
         await SettingsService.set_setting("run_wave_on_start", "1" if run_wave_on_start else "0")
         await SettingsService.set_setting("control_group", control_group.strip())
+        await SettingsService.set_setting("ghost_auditing_enabled", "1" if ghost_auditing_enabled else "0")
+        await SettingsService.set_setting("ghost_auditing_limit", str(ghost_auditing_limit))
+        await SettingsService.set_setting("ghost_auditing_action", ghost_auditing_action)
         
         # Update global memory state
         state.min_delay = min_delay

@@ -634,7 +634,10 @@ async def post_save_settings(
     send_report: Optional[str] = Form(None),
     report_target: str = Form(...),
     run_wave_on_start: Optional[str] = Form(None),
-    control_group: str = Form("")
+    control_group: str = Form(""),
+    ghost_auditing_enabled: Optional[str] = Form(None),
+    ghost_auditing_limit: int = Form(10),
+    ghost_auditing_action: str = Form("skip")
 ):
     try:
         # Input Validation Checks
@@ -646,6 +649,8 @@ async def post_save_settings(
             raise ValueError("Inter-group delay must be at least 1 second.")
         if not report_target or not report_target.strip():
             raise ValueError("Report and backup target username/ID cannot be empty.")
+        if ghost_auditing_limit < 1:
+            raise ValueError("Ghost auditing limit must be at least 1 message.")
             
         await settings_svc.update_all_settings(
             min_delay=min_delay,
@@ -654,7 +659,10 @@ async def post_save_settings(
             send_report=(send_report is not None),
             report_target=report_target.strip(),
             run_wave_on_start=(run_wave_on_start is not None),
-            control_group=control_group
+            control_group=control_group,
+            ghost_auditing_enabled=(ghost_auditing_enabled is not None),
+            ghost_auditing_limit=ghost_auditing_limit,
+            ghost_auditing_action=ghost_auditing_action
         )
         
         # Apply parameters to running state immediately
