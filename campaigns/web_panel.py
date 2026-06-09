@@ -362,19 +362,19 @@ async def get_templates(request: Request):
     templates_list = await template_svc.get_all_templates(is_override=0)
     override_templates = await template_svc.get_all_templates(is_override=1)
     
-    # Load override setting
+    # Load override settings
     override_active = await settings_svc.get_setting("override_template_active", "0")
+    override_until = await settings_svc.get_setting("override_template_until", "")
     
     # Check if override is currently active in real-time
     is_currently_overridden = False
-    if override_active == "1":
-        now_str = datetime.now().isoformat()
-        active_overrides = await db.fetchall(
-            "SELECT * FROM templates WHERE is_override = 1 AND is_active = 1 AND override_until > ?",
-            (now_str,)
-        )
-        if active_overrides:
-            is_currently_overridden = True
+    if override_active == "1" and override_until:
+        try:
+            until_dt = datetime.fromisoformat(override_until)
+            if datetime.now() < until_dt:
+                is_currently_overridden = True
+        except ValueError:
+            pass
 
     context = {
         "request": request,
@@ -383,6 +383,7 @@ async def get_templates(request: Request):
         "templates": templates_list,
         "override_templates": override_templates,
         "override_active": override_active,
+        "override_until": override_until,
         "is_currently_overridden": is_currently_overridden,
         "current_time": datetime.now().isoformat(),
         **get_flash_context(request)
@@ -399,37 +400,47 @@ async def post_add_template(request: Request, text: str = Form(...)):
         
     return RedirectResponse(url="/templates", status_code=303)
 
-@app.post("/templates/toggle-override")
-async def post_toggle_override(request: Request, active: Optional[str] = Form(None)):
+@app.post("/templates/save-override-settings")
+async def post_save_override_settings(
+    request: Request,
+    active: Optional[str] = Form(None),
+    until: str = Form("")
+):
     try:
         is_active = "1" if active else "0"
+        
+        # Validation checks
+        if is_active == "1":
+            if not until:
+                raise ValueError("Tanggal kedaluwarsa override harus diisi.")
+            try:
+                until_dt = datetime.fromisoformat(until)
+                if until_dt <= datetime.now():
+                    raise ValueError("Tanggal kedaluwarsa harus di masa depan.")
+            except ValueError as ve:
+                if "di masa depan" in str(ve):
+                    raise
+                raise ValueError("Format tanggal tidak valid.")
+                
         await settings_svc.set_setting("override_template_active", is_active)
+        await settings_svc.set_setting("override_template_until", until)
+        
         if is_active == "1":
             request.session["flash_success"] = "Mode override promo diaktifkan."
         else:
             request.session["flash_success"] = "Mode override promo dinonaktifkan."
     except Exception as e:
-        request.session["flash_danger"] = f"Gagal mengubah status override: {e}"
+        request.session["flash_danger"] = f"Gagal menyimpan pengaturan override: {e}"
         
     return RedirectResponse(url="/templates", status_code=303)
 
 @app.post("/templates/override/add")
-async def post_add_override_template(request: Request, text: str = Form(...), until: str = Form(...)):
+async def post_add_override_template(request: Request, text: str = Form(...)):
     try:
         if not text.strip():
             raise ValueError("Teks override tidak boleh kosong.")
-        if not until:
-            raise ValueError("Tanggal kedaluwarsa override harus diisi.")
-        try:
-            until_dt = datetime.fromisoformat(until)
-            if until_dt <= datetime.now():
-                raise ValueError("Tanggal kedaluwarsa harus di masa depan.")
-        except ValueError as ve:
-            if "di masa depan" in str(ve):
-                raise
-            raise ValueError("Format tanggal tidak valid.")
             
-        await template_svc.add_template(text.strip(), is_override=1, override_until=until)
+        await template_svc.add_template(text.strip(), is_override=1)
         request.session["flash_success"] = "Template override sementara berhasil ditambahkan."
     except Exception as e:
         request.session["flash_danger"] = f"Gagal menambahkan template override: {e}"
