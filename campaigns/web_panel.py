@@ -359,12 +359,25 @@ async def post_test_group(request: Request, id: int, custom_msg: Optional[str] =
 
 @app.get("/templates")
 async def get_templates(request: Request):
-    templates_list = await template_svc.get_all_templates(is_override=0)
-    override_templates = await template_svc.get_all_templates(is_override=1)
-    
-    # Load override settings
+    # Load override settings first to perform auto-cleanup if expired
     override_active = await settings_svc.get_setting("override_template_active", "0")
     override_until = await settings_svc.get_setting("override_template_until", "")
+    
+    if override_active == "1" and override_until:
+        try:
+            until_dt = datetime.fromisoformat(override_until)
+            if datetime.now() >= until_dt:
+                # Expiration hit: auto-cleanup
+                await settings_svc.set_setting("override_template_active", "0")
+                await settings_svc.set_setting("override_template_until", "")
+                await db.execute("DELETE FROM templates WHERE is_override = 1")
+                override_active = "0"
+                override_until = ""
+        except ValueError:
+            pass
+
+    templates_list = await template_svc.get_all_templates(is_override=0)
+    override_templates = await template_svc.get_all_templates(is_override=1)
     
     # Check if override is currently active in real-time
     is_currently_overridden = False
@@ -397,8 +410,21 @@ async def get_templates(request: Request):
 @app.post("/templates/add")
 async def post_add_template(request: Request, text: str = Form(...)):
     try:
-        await template_svc.add_template(text)
-        request.session["flash_success"] = "Promo template successfully saved."
+        normalized = text.replace("\r\n", "\n")
+        import re
+        parts = re.split(r'\n\s*---\s*\n', normalized)
+        
+        added_count = 0
+        for part in parts:
+            stripped = part.strip()
+            if stripped:
+                await template_svc.add_template(stripped, is_override=0)
+                added_count += 1
+                
+        if added_count > 1:
+            request.session["flash_success"] = f"{added_count} promo templates successfully saved."
+        else:
+            request.session["flash_success"] = "Promo template successfully saved."
     except Exception as e:
         request.session["flash_danger"] = f"Failed to save promo template: {e}"
         
@@ -444,8 +470,21 @@ async def post_add_override_template(request: Request, text: str = Form(...)):
         if not text.strip():
             raise ValueError("Teks override tidak boleh kosong.")
             
-        await template_svc.add_template(text.strip(), is_override=1)
-        request.session["flash_success"] = "Template override sementara berhasil ditambahkan."
+        normalized = text.replace("\r\n", "\n")
+        import re
+        parts = re.split(r'\n\s*---\s*\n', normalized)
+        
+        added_count = 0
+        for part in parts:
+            stripped = part.strip()
+            if stripped:
+                await template_svc.add_template(stripped, is_override=1)
+                added_count += 1
+                
+        if added_count > 1:
+            request.session["flash_success"] = f"{added_count} temporary override templates successfully added."
+        else:
+            request.session["flash_success"] = "Template override sementara berhasil ditambahkan."
     except Exception as e:
         request.session["flash_danger"] = f"Gagal menambahkan template override: {e}"
         

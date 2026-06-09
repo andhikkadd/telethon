@@ -25,15 +25,14 @@ class TemplateService:
                         if datetime.now() < override_until:
                             # Return override templates strictly (can be empty if none created)
                             return await db.fetchall("SELECT * FROM templates WHERE is_override = 1 AND is_active = 1")
+                        else:
+                            # Expiration hit: auto-cleanup
+                            await settings_svc.set_setting("override_template_active", "0")
+                            await settings_svc.set_setting("override_template_until", "")
+                            await db.execute("DELETE FROM templates WHERE is_override = 1")
+                            logger.info("Override expired: automatically disabled override mode and deleted temporary templates.")
                     except Exception as e:
-                        logger.warning(f"Error parsing global override_template_until: {e}")
-                # If override is active but expired or invalid, we don't fall back if include_override is True.
-                # However, the user wants override mode to strictly prevent fallback when turned ON.
-                # So we return empty list if override is ON but has expired, OR we can let it fall back.
-                # Wait, the user said: "mode override kunyalain buat promosiin event ini, misal ada event lagi tapi beda, tinggal ubah templates teks mode overridenya...".
-                # If they set override_until, they want it active UNTIL that time. Once expired, it returns to regular.
-                # So if it's expired, it should fall back to regular templates.
-                # Thus, we fall through to regular templates if datetime.now() >= override_until!
+                        logger.warning(f"Error handling override expiration cleanup: {e}")
         return await db.fetchall("SELECT * FROM templates WHERE (is_override = 0 OR is_override IS NULL) AND is_active = 1")
 
     @staticmethod
