@@ -376,6 +376,9 @@ async def get_templates(request: Request):
         except ValueError:
             pass
 
+    # Get active tab from query params
+    active_tab = request.query_params.get("tab", "regular")
+
     context = {
         "request": request,
         "is_logged_in": True,
@@ -386,6 +389,7 @@ async def get_templates(request: Request):
         "override_until": override_until,
         "is_currently_overridden": is_currently_overridden,
         "current_time": datetime.now().isoformat(),
+        "active_tab": active_tab,
         **get_flash_context(request)
     }
     return templates.TemplateResponse(request, "templates.html", context)
@@ -398,7 +402,7 @@ async def post_add_template(request: Request, text: str = Form(...)):
     except Exception as e:
         request.session["flash_danger"] = f"Failed to save promo template: {e}"
         
-    return RedirectResponse(url="/templates", status_code=303)
+    return RedirectResponse(url="/templates?tab=regular", status_code=303)
 
 @app.post("/templates/save-override-settings")
 async def post_save_override_settings(
@@ -432,7 +436,7 @@ async def post_save_override_settings(
     except Exception as e:
         request.session["flash_danger"] = f"Gagal menyimpan pengaturan override: {e}"
         
-    return RedirectResponse(url="/templates", status_code=303)
+    return RedirectResponse(url="/templates?tab=override", status_code=303)
 
 @app.post("/templates/override/add")
 async def post_add_override_template(request: Request, text: str = Form(...)):
@@ -445,7 +449,7 @@ async def post_add_override_template(request: Request, text: str = Form(...)):
     except Exception as e:
         request.session["flash_danger"] = f"Gagal menambahkan template override: {e}"
         
-    return RedirectResponse(url="/templates", status_code=303)
+    return RedirectResponse(url="/templates?tab=override", status_code=303)
 
 @app.post("/templates/{id}/delete")
 async def post_delete_template(request: Request, id: int):
@@ -454,21 +458,24 @@ async def post_delete_template(request: Request, id: int):
         request.session["flash_danger"] = f"Template dengan ID {id} not found."
         return RedirectResponse(url="/templates", status_code=303)
 
+    is_override = template.get("is_override", 0)
+    redirect_tab = "override" if is_override == 1 else "regular"
+
     try:
         # Check if it's a regular template
-        if template.get("is_override") != 1:
+        if is_override != 1:
             # Check that we have at least one active template remaining in DB
             active_templates = await template_svc.get_active_templates(include_override=False)
             if len(active_templates) <= 1:
                 request.session["flash_danger"] = "Abort: At least one active promotion template must remain in the system."
-                return RedirectResponse(url="/templates", status_code=303)
+                return RedirectResponse(url=f"/templates?tab={redirect_tab}", status_code=303)
 
         await template_svc.delete_template(id)
         request.session["flash_success"] = f"Promo template ID {id} successfully deleted."
     except Exception as e:
         request.session["flash_danger"] = f"Failed to delete template: {e}"
         
-    return RedirectResponse(url="/templates", status_code=303)
+    return RedirectResponse(url=f"/templates?tab={redirect_tab}", status_code=303)
 
 @app.get("/settings")
 async def get_settings(request: Request):
